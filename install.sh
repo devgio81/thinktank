@@ -11,7 +11,7 @@
 #   6. copy skills, agents and hooks into ~/.claude
 #   7. register the MCP server
 #   8. print the settings.json hook block for you to merge
-#   9. smoke-test the collection with a real write, read and delete
+#   9. smoke-test the collection: write, read back, search the named vector, delete
 #
 # Re-running the script is safe. It creates what is missing, leaves what is
 # already there, and backs up any file it would otherwise overwrite.
@@ -61,7 +61,7 @@ Nine steps, in order:
   6. copy skills, agents and hooks into ~/.claude
   7. register the MCP server
   8. print the settings.json hook block for you to merge
-  9. smoke-test the collection with a real write, read and delete
+  9. smoke-test the collection: write, read back, search the named vector, delete
 
 Re-running the script is safe. It creates what is missing, leaves what is
 already there, and backs up any file it would otherwise overwrite.
@@ -98,8 +98,15 @@ log "claude home: ${CLAUDE_HOME}"
 # ===========================================================================
 step "1/9  Prerequisites"
 
+# jq belongs in this list, next to docker and curl, and not in a "nice to have"
+# note further down. The loop-mode guard (hooks/tt-loop-guard.sh) reads the tool
+# name and the shell command out of a JSON payload with jq. Without jq it cannot
+# read the request at all, so it now denies every gated action instead of
+# deciding one — which stops an unattended run dead rather than waving it
+# through, but stops it dead all the same. An installation without jq has no
+# usable loop mode.
 missing=""
-for cmd in docker curl; do
+for cmd in docker curl jq; do
   if command -v "${cmd}" >/dev/null 2>&1; then
     ok "${cmd} found"
   else
@@ -109,7 +116,11 @@ for cmd in docker curl; do
 done
 
 if [ -n "${missing}" ]; then
-  fail "Missing required command(s):${missing}. Install them and run this script again."
+  fail "Missing required command(s):${missing}. Install them and run this script again.
+         jq:     brew install jq  |  apt-get install jq  |  dnf install jq
+                 The loop-mode guard parses its tool payload with jq. Without
+                 jq it can decide nothing, so it denies everything and no
+                 unattended run can proceed."
 fi
 
 # `docker compose` (v2 plugin) is what docker-compose.yml is written for.
@@ -152,13 +163,11 @@ else
          Then reopen your shell and run this script again."
 fi
 
-# jq is optional here. Only scripts/migrate-collection.sh requires it;
-# scripts/init-collections.sh uses it when present and falls back to sed.
-if command -v jq >/dev/null 2>&1; then
-  ok "jq found (required by scripts/migrate-collection.sh)"
-else
-  warn "jq is not installed. Everything below works without it, but scripts/migrate-collection.sh will not run."
-fi
+# jq was checked with docker and curl above; by here it is present. This line
+# only records what depends on it, because the reasons are unequal: the two
+# scripts merely fail visibly without jq, while the loop-mode guard fails
+# SILENTLY - it would parse nothing, match nothing, and allow everything.
+ok "jq found (required by hooks/tt-loop-guard.sh and scripts/migrate-collection.sh)"
 
 # ===========================================================================
 # 2. .env and API key
@@ -464,9 +473,10 @@ if command -v claude >/dev/null 2>&1; then
   # `claude mcp list` prints one "<name>: <command> - <status>" line per server.
   # Anchoring on the trailing colon is what makes this an exact-name test.
   # "^${MCP_NAME}\b" does NOT work: "-" is not a word character, so \b matches
-  # in front of it and the pattern also hits qdrant-thinktank-v5, -v6, -v8 and
-  # -v9. On a machine carrying those, the check reports "already registered"
-  # and this server never gets added.
+  # in front of it, and the pattern then also hits any server whose name merely
+  # STARTS with ${MCP_NAME} - "${MCP_NAME}-old", "${MCP_NAME}-2", a suffixed
+  # copy of any kind. On a machine carrying one of those, the check reports
+  # "already registered" and this server never gets added.
   if ! mcp_list_out="$(claude mcp list 2>&1)"; then
     warn "'claude mcp list' failed. Its output was:"
     printf '%s\n' "${mcp_list_out}" | sed 's/^/    /'
@@ -531,13 +541,20 @@ cat <<'HOOKBLOCK'
     ],
     "TaskCompleted": [
       {
-        "matcher": "*",
         "hooks": [
           { "type": "command", "command": "$HOME/.claude/hooks/tt-loop-completion-gate.sh" }
         ]
       }
     ]
   }
+
+  Two details are load-bearing. PreToolUse carries "matcher": "*", because the
+  guard has to see every tool call, not only Bash. TaskCompleted carries no
+  matcher, because it is not a tool event and there is nothing to match on. Write
+  the paths with $HOME rather than ~: the command runs through a shell, which
+  expands the variable reliably, while a tilde that survives unexpanded points at
+  a directory that does not exist. The hook then fails to start, and a hook that
+  never runs gates nothing while looking exactly like one that does.
 
   Both hooks do nothing unless a run sets CLAUDE_TT_LOOP_MODE=1, so interactive
   sessions remain unchanged. Never put that marker in the "env" block of

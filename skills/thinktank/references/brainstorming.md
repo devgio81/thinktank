@@ -24,8 +24,9 @@ standalone `thinktank-brainstormer` agent.
 Round 0  FRAME     Decompose the topic · check Qdrant memory (earlier brainstorms on the
                    topic) · question round 1 to the user: goal, context/audience, hard
                    constraints, success criterion — only what cannot be derived, max. 4
-Round n  FAN-OUT   2–4 brainstormers in parallel, one lens each, with: topic, lens,
-                   user answers, the idea ledger so far (dedupe basis), search budget
+Round n  FAN-OUT   2–5 brainstormers in parallel, one lens each (quick=2 · standard=4 ·
+                   deep=5), with: topic, lens, user answers, the idea ledger so far
+                   (dedupe basis), search budget
          REDUCE    Deterministic: deduplicate ideas by title/core (append), unite the
                    source ledgers, deduplicate the agents' questions and sort them by
                    decision relevance. NO LLM-judged merge of competing assessments — on
@@ -33,14 +34,26 @@ Round n  FAN-OUT   2–4 brainstormers in parallel, one lens each, with: topic, 
          GATE      Interim state to the user (top ideas + distilled questions via
                    AskUserQuestion, max. 4). The answers steer round n+1:
                    go deeper, change direction, or stop.
-EXIT     4 exits   verified  = the user says "that's enough" / the round-0 success
-                               criterion is met
-                   ceiling   = max. rounds reached (default 2, hard cap 3)
-                   budget    = max. agents per run reached (default 8)
-                   no-progress = a round yields <~20 % new (non-duplicate) ideas
-                   Every exit is named and justified — none silently becomes "done".
+EXIT     4 exits   see the lane-specific readings below
 CLOSING  DOSSIER   docs/brainstorms/<date>-<slug>.md + learning broadcast to Qdrant
 ```
+
+## The four exits, read for this lane
+
+The lane honors all four exits from `loop-engineering.md` §3, but **two of them carry a
+lane-specific meaning here, and the names must be read that way and no other**. Say which reading
+applies whenever the lane reports an exit, because the same word means something stricter everywhere
+else in the engine:
+
+| Exit | Engine-wide meaning | **Reading in this lane** |
+|---|---|---|
+| `verified` | a deterministic verifier confirms the stop condition | **`verified (user)`** — the user says it is enough, or the round-0 success criterion is met by the user's judgment. There is no deterministic verifier for an idea space, and this lane must never claim one |
+| `ceiling` | hard iteration count | unchanged: max. rounds reached (default 2, hard cap 3) |
+| `budget` | tokens and wall-clock | **`budget (agents)`** — the agent cap per run is reached (default 8). The token and wall-clock budget still applies underneath; the agent cap is the one that normally fires first |
+| `no-progress` | oscillation or zero delta | unchanged: a round yields <~20 % new (non-duplicate) ideas |
+
+Every exit is named and justified — none silently becomes "done". A `verified (user)` exit is a
+human judgment on record, never evidence that the ideas are correct.
 
 ## Standard lenses (default line-up, adjustable per run)
 
@@ -54,10 +67,11 @@ CLOSING  DOSSIER   docs/brainstorms/<date>-<slug>.md + learning broadcast to Qdr
    be?"), and extreme scenarios. This lens deliberately permits the most speculation. Its
    output is marked as speculative.
 
-`depth=quick` assigns 2 lenses (1+3), `standard` assigns 4, and `deep` assigns 4 plus a
-topic-specific fifth lens that the conductor derives from the round-0 answers (for instance,
-"regulation" for an AI feature). In that case, the AI-touchpoint scan also covers the end
-result.
+`depth=quick` assigns **2** lenses (1+3), `standard` assigns **4**, and `deep` assigns **5** — the
+four above plus a topic-specific fifth lens that the conductor derives from the round-0 answers (for
+instance, "regulation" for an AI feature). In that case, the AI-touchpoint scan also covers the end
+result. One brainstormer runs per lens per round, so a `deep` round fans out to five agents, and the
+run-wide cap of 8 agents is the `budget (agents)` exit.
 
 ## Question discipline
 

@@ -27,8 +27,8 @@ llm-tooling
 
 Add them under Settings or from the repository home page by clicking the gear icon next to About.
 
-## About the README links, honestly
+## When editing the README
 
-GitHub adds `rel="nofollow"` to outbound links in a rendered README. A link to your own site therefore passes no ranking signal, regardless of how many keywords you place in the README. The link can still bring referral traffic when a developer reads the honesty section, sees that the repository is competently built, and clicks through. That is the entire mechanism. Treat the repository as a work sample, not a backlink.
-
-Act on two consequences. Keep the link where readers reach it after the repository has convinced them, not before. That is why it appears in the closing section rather than in a badge row. When editing the README later, keep the honest limitations section intact. It earns the click because it shows that the author understands where the project breaks.
+Keep the "What is not included, and what does not work" section intact. It is the part that tells a
+reader where the project breaks before they depend on it, and removing it would leave the feature
+list unbalanced.

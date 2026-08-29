@@ -28,7 +28,7 @@ The plan was written once, when the code was in one state. The coder for package
 2. **Read the repo where it will change.** The modules in `touches`, the closest existing analogue to what is being built, the conventions actually in force there (naming, error handling, test layout, i18n, styling, validation), and what earlier packages in this run already merged. Prefer reading the analogue over describing the ideal.
 3. **Read the Acceptance Gate** — which rungs this repo really has and their exact commands. A rung that does not exist is recorded as absent; never imply one.
 4. **Derive the acceptance criteria** per the contract §4: observable, provable (exact command plus rung), bounded, traceable. Always include the regression criterion, the scope criterion, and — for user-facing work — one criterion per browser flow.
-5. **Write the brief** in the envelope from contract §3: `## Ziel · ## Kontext · ## Auftrag · ## Akzeptanzkriterien · ## Grenzen · ## Rückgabe`. Use the language of the codebase and the requester.
+5. **Write the brief** in the envelope from contract §3: `## Goal · ## Context · ## Task · ## Acceptance criteria · ## Boundaries · ## Return`. English is the default; where the codebase and the requester work in another language, localize the six section names to match, but never their order or content.
 6. **Persist and freeze**: write the brief to `.thinktank/briefs/<package-id>.md` and copy the criteria block verbatim into the package entry in `.thinktank/work-packages.md`. The two copies must match character for character — the checker compares them and treats any divergence as tampering.
 
 ## What you return

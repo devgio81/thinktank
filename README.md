@@ -38,8 +38,10 @@ scripts/
   qdrant-mcp-launcher.sh
                       starts the MCP server with the API key read from .env,
                       so the key never reaches a command line
+                      (install.sh fails without this file)
   lib/load-env.sh     reads .env without executing it, and without letting it
                       overwrite variables already set in the environment
+                      (install.sh fails without this file)
 docs/                 setup notes
 install.sh            copies skills/, agents/ and hooks/ into ~/.claude/
 docker-compose.yml    the local Qdrant service
@@ -50,10 +52,13 @@ LICENSE               MIT
 ## Requirements
 
 - **Claude Code**, recent enough to support skills, subagents and hooks.
-- **Docker**, to run Qdrant locally.
-- **uv / uvx**, to run the Qdrant MCP server without a global install.
-- **jq**, which both hooks use to read their payload.
-- Optional: the **`gh` CLI** for delivery mode, and whatever e2e runner the target repo uses for the browser rung.
+- **bash 3.2 or newer.** Every script here is bash, not POSIX `sh`: they use arrays, `[[ ]]` and process substitution. Version 3.2 is what macOS still ships and what these scripts are tested against, so no newer bash is needed.
+- **Docker** with the **Compose v2 plugin**, to run Qdrant locally. Step 1 checks that the daemon answers, not merely that the CLI is installed. The standalone v1 `docker-compose` is accepted with a warning.
+- **curl.** The installer communicates with Qdrant over HTTP for the readiness poll, the collection check, and the entire smoke test. Step 1 of 9 stops if curl is missing.
+- **uv / uvx**, to run the Qdrant MCP server without a global install. Either one is enough: where only `uv` is on `PATH`, the installer records `uv tool run` instead of `uvx`.
+- **jq — required, not optional.** Both hooks use it to read their payloads, and the loop guard extracts the tool name and shell command from that payload before deciding what to do. Without jq, the guard denies every tool call in loop mode, including harmless ones. When it cannot decide, it refuses the call rather than letting it through. An unattended run on a machine without jq therefore cannot start at all, and step 1 of the installer refuses to continue without it.
+- **`gh` CLI** — required for delivery mode, optional otherwise. The guard also uses it to resolve a pull request's actual base branch instead of trusting the command line. If gh is missing, the guard denies an otherwise permitted merge rather than waving it through. Delivery mode additionally needs whatever e2e runner the target repository uses for the browser rung.
+- `openssl` and `uuidgen` are used when available, but neither is required. The installer falls back to `/dev/urandom` for both the API key and the smoke-test id.
 
 ## Installation
 
@@ -63,20 +68,35 @@ cd thinktank
 ./install.sh
 ```
 
+Clone it somewhere it can remain. The MCP registration points to
+`scripts/qdrant-mcp-launcher.sh` inside this directory, and `docker compose` also needs the
+file. If you later move the clone or delete it during a tidy-up, the memory backend stops
+starting. No error message explains why. The memory tools simply disappear from the session.
+
 `install.sh` runs nine steps: it checks the prerequisites, writes a `.env` with a freshly
 generated API key, starts Qdrant through `docker-compose.yml`, waits for the instance to
 report ready, creates the `thinktank-memory` collection, copies the skills, agents and hooks
-into `~/.claude/`, registers the MCP server, prints the hook block for your `settings.json`,
-and finishes with a smoke test that writes a point, reads it back and deletes it again.
+into `~/.claude/`, registers the MCP server, and prints the hook block for your
+`settings.json`.
 
-Do not start Qdrant yourself beforehand. The script brings up the container defined in
-`docker-compose.yml`, and a container you started by hand occupies port 6333 and makes that
-step fail.
+Step 9 ends with a smoke test that writes a point, reads it back by id, searches against the
+named vector, and then deletes the point. The search is the decisive rung. A collection built
+with an unnamed vector handles every other request correctly. It fails only here, during the
+first real recall.
 
-Two things the script deliberately leaves to you: it never edits your `settings.json`, and it
-never overwrites an existing `.env`, so a second run will not rotate your key.
+You do not need to start Qdrant first. Step 3 starts the container defined in
+`docker-compose.yml`. Once `.env` exists, you can also start it yourself from this directory
+with `docker compose up -d`. That step fails if another container or process already holds
+port 6333. Free the port before running the installer.
 
-`install.sh` already registers the memory backend. To do it by hand, add this to your MCP configuration:
+The script deliberately leaves two things to you. It never edits your `settings.json`, and it
+never rotates an API key already stored in `.env`. As a result, a second run cannot cut the
+running container off from its own key. If `.env` exists but contains no key, the installer
+adds one and leaves the rest of the file unchanged.
+
+`install.sh` already registers the memory backend. To do it by hand, merge the entry below into
+the `mcpServers` object you already have — do not paste the whole block over your configuration,
+or the other servers in it disappear:
 
 ```json
 {
@@ -110,14 +130,14 @@ The two hooks are what make unattended runs safe, and Claude Code only runs hook
       {
         "matcher": "*",
         "hooks": [
-          { "type": "command", "command": "~/.claude/hooks/tt-loop-guard.sh" }
+          { "type": "command", "command": "$HOME/.claude/hooks/tt-loop-guard.sh" }
         ]
       }
     ],
     "TaskCompleted": [
       {
         "hooks": [
-          { "type": "command", "command": "~/.claude/hooks/tt-loop-completion-gate.sh" }
+          { "type": "command", "command": "$HOME/.claude/hooks/tt-loop-completion-gate.sh" }
         ]
       }
     ]
@@ -125,7 +145,17 @@ The two hooks are what make unattended runs safe, and Claude Code only runs hook
 }
 ```
 
+Two details in that block are load-bearing. `PreToolUse` carries `"matcher": "*"`, because the
+guard has to see every tool call, not only Bash. `TaskCompleted` carries no matcher, because it
+is not a tool event and there is nothing to match on. And the paths are written with `$HOME`
+rather than `~`: the command runs through a shell, which expands the variable reliably, whereas
+a tilde that survives unexpanded points at a directory that does not exist. The hook then fails
+to start, and a hook that never runs gates nothing while looking exactly like one that does.
+
 Both hooks are a no-op unless `CLAUDE_TT_LOOP_MODE=1` is set in the process environment, so interactive sessions are untouched. Never put that variable into `settings.json` — a slash command must not be able to arm loop mode for its own session.
+
+Now restart Claude Code. The MCP server, the new skills and the hooks are all read at startup,
+so none of them appear in a session that was already running.
 
 Then: `/thinktank <task>` for interactive engineering work, `/tt-loop <goal> until=<domain condition>` to start a gated unattended run, `/tt-brainstorm <topic>` for the brainstorming lane.
 
@@ -134,14 +164,14 @@ Then: `/thinktank <task>` for interactive engineering work, `/tt-loop <goal> unt
 This section matters more than the feature list.
 
 - **The loop guard is a string matcher, not a security mechanism.** It reads a single command line and makes a decision. It cannot parse a shell, resolve variables or follow redirects, so commands assembled from separate pieces bypass it. Real protection comes from filesystem permissions and from running the loop in an environment that cannot access anything you care about. Treat the guard as a seatbelt that protects against an agent's mistakes, not as a defence against an attacker.
-- **MCP tools do not pass through the guard.** The guard controls the Bash tool and blocks a named list of outward-facing tools. It does not cover anything accessed through an MCP server available to the session.
+- **The guard sees every tool call, but what it recognises depends on two lists.** Because it uses the matcher `"*"`, an MCP call reaches it in exactly the same way as a Bash call. Beyond the shell command line, the guard judges tools by name. A fixed list blocks tools for publishing, remote triggers, messaging, scheduling, cloud deploys, and access to the operator's real Chrome and desktop. A heuristic also blocks any MCP tool whose name contains a mutating verb such as create, update, delete, publish, send, upload, deploy or merge. Both methods rely on enumeration. A mutating tool passes straight through if its name appears in neither list, and the gap is wider than it sounds: a sweep of one ordinary session found sixteen of twenty-five mutating tools passing. Among them an ad-platform apply step (`confirm_and_apply`), a search-console call (`submit_sitemap`), a notebook tool that makes a notebook publicly readable (`notebook_share_public`), and cloud tools whose single name hides full resource CRUD (`azure__storage`, `azure__sql`). Extend both lists for every server you connect. Never assume a server is covered simply because it is dangerous.
 - **No hook can tell the maker from the checker.** Both run in the same process. The completion gate makes a fake record harder to create, but the contract and independent review enforce the maker/checker split. A file on disk cannot.
-- **Agent teams are an experimental Claude Code feature.** They require a feature flag and may break without warning. When the flag is unset, the engine runs without them.
-- **The NotebookLM lane is optional and requires a Google login.** It remains unavailable without an authenticated session, and the engine reports that gap rather than inventing an answer. The free tier allows roughly 50 questions per day.
+- **Agent teams are an experimental Claude Code feature, and the kit ships no roster.** They require a feature flag and may break without warning. When the flag is unset, the engine runs without them. Beyond the flag, teammates are spawned from subagent definitions by name, and the five definitions in `agents/` are the engine's own — a review team needs definitions you write yourself.
+- **The NotebookLM lane is optional, and turning it on is your job.** It needs the `gemini-notebook-mcp` server connected to your session and an authenticated Google account (`nlm login`). Neither is part of `install.sh`. Without them the lane stays unavailable and the engine reports the gap rather than inventing an answer. The free tier allows roughly 50 questions per day.
 - **The EU AI Act dates are volatile.** Deadlines and interpretations of individual articles can change. Recheck official sources whenever a date affects the outcome. The engine produces an engineering assessment. A lawyer or data protection officer remains responsible for legal and launch decisions.
 - **The Decision Matrix numbers are directional.** The break-even figures used to decide whether a graph outperforms a loop come from published comparisons, not from benchmarks of this repository. Measure them again before relying on them.
 - **Delivery mode requires a real staging environment.** Without an environment where the browser pass can run, the engine records that rung as absent. It cannot prove a package that depends on the missing pass.
-- **Production is never grantable.** No Autonomy Grant, configuration flag or graph edge permits production deployments, force-pushes, publishing, scheduling or changes to the harness itself. If you need any of these actions, perform them yourself.
+- **Force-pushes, publishes and schedules are blocked. "Production" requires human judgement.** The never-grantable list is real and testable: the guard denies `git push --force`, `npm publish`, `crontab`, `gh release`, `gh run rerun`, the scheduling tools, and every write to the installed harness under `~/.claude/`, whether or not a grant is in force. A production deployment is different in kind. A grant identifies its merge targets by branch name, but no hook can see where a branch's pipeline ships. A grant that lists `dev` allows a merge into `dev` even when that pipeline deploys to production. The grant records the destination in `merge_targets_deploy_to`, but that field serves as a declaration for the person reading the grant, not as an input to the guard. This promise depends on the care of the person who signs the grant, not on the code.
 
 ## Cognitive Mode
 

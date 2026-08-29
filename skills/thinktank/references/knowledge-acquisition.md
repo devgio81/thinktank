@@ -141,7 +141,7 @@ The free tier allows roughly 50 queries per day, while paid tiers allow about fi
 
 ## Degraded paths
 
-**Qdrant down** — `http://localhost:6333/collections` fails or times out, or `qdrant-find` returns errors twice. Declare memory unavailable once, then stop all memory reads and writes for the session. Acquisition can still answer the current question, but it cannot write the results back. Record each acquired fact as `memory capture status: queued (qdrant down)` for a later session.
+**Qdrant down** — the keyed probe (`curl -H "api-key: $QDRANT_API_KEY" http://localhost:6333/collections`) gets no connection or times out, or `qdrant-find` returns errors twice. A bare `401` means the instance is **up** and the key is wrong — a configuration fault, not an outage (`retrieval-routing.md`, Degraded mode). Declare memory unavailable once, then stop all memory reads and writes for the session. Acquisition can still answer the current question, but it cannot write the results back. Record each acquired fact as `memory capture status: queued (qdrant down)` for a later session.
 
 **Lane unavailable** — not configured, `auth_status` of `not_configured` or `stale`, no relevant notebook, or the daily limit reached. Record the gap and continue with docs-web and local truth.
 

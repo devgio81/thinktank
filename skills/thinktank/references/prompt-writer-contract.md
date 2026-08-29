@@ -26,20 +26,20 @@ Agent definition: `~/.claude/agents/thinktank-prompt-writer.md`.
 A brief has exactly these sections, in this order. Anything else is noise that consumes the coder's context.
 
 ```
-## Ziel            one paragraph: what exists after this package, in domain terms
-## Kontext         the repo facts the coder would otherwise have to rediscover —
-                   file paths, the analogue to follow, the convention that applies,
-                   what earlier packages already changed
-## Auftrag         the concrete change, in the order it should be made
-## Akzeptanzkriterien   §4 — numbered, each with its proof command. NON-NEGOTIABLE.
-## Grenzen         what must not be touched: files, patterns, scope. Explicitly:
-                   no test may be deleted, weakened or skipped; the diff stays
-                   inside `touches`
-## Rückgabe        what the coder returns: the diff summary, each criterion with
-                   its command output, and anything it could not satisfy
+## Goal                 one paragraph: what exists after this package, in domain terms
+## Context              the repo facts the coder would otherwise have to rediscover —
+                        file paths, the analogue to follow, the convention that applies,
+                        what earlier packages already changed
+## Task                 the concrete change, in the order it should be made
+## Acceptance criteria  §4 — numbered, each with its proof command. NON-NEGOTIABLE.
+## Boundaries           what must not be touched: files, patterns, scope. Explicitly:
+                        no test may be deleted, weakened or skipped; the diff stays
+                        inside `touches`
+## Return               what the coder returns: the diff summary, each criterion with
+                        its command output, and anything it could not satisfy
 ```
 
-The envelope uses the language of the surrounding codebase and the requester; the section names above may be localized to match, but the order and content of the six sections are fixed. Long enough to remove guesswork, short enough that the coder's context is spent on code (`loop-engineering.md` §7).
+**English is the default.** Where the surrounding codebase and the requester work in another language, the six section names may be localized to match — a brief for a German-language repository may read `## Ziel · ## Kontext · ## Auftrag · ## Akzeptanzkriterien · ## Grenzen · ## Rückgabe`. Only the names move: the order and the content of the six sections are fixed either way. Long enough to remove guesswork, short enough that the coder's context is spent on code (`loop-engineering.md` §7).
 
 ## 4. Deriving acceptance criteria
 
@@ -65,7 +65,7 @@ Derive the criteria rather than copying them. Each one must satisfy all four:
 
 - The brief goes to the implementing agent (a specialist agent, an `Agent` call, or a teammate) as its complete instruction set. **The coder does not get the plan, the transcript, or the other packages.** It gets only this brief and the repo.
 - Write the brief to `.thinktank/briefs/<package-id>.md` so reviewers can inspect it in the PR: what the coder was told is part of what a reviewer needs.
-- The coder returns the materials specified in §3 `Rückgabe`. Treat a return that claims success without command output as a failed round, not a passed one (`loop-engineering.md` §8).
+- The coder returns the materials specified in §3 `Return`. Treat a return that claims success without command output as a failed round, not a passed one (`loop-engineering.md` §8).
 - The checker receives the **frozen criteria and the diff**, never the brief's reasoning — a checker that reads the maker's justification starts agreeing with it.
 
 ## 7. Antipatterns

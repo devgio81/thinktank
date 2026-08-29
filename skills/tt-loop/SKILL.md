@@ -25,6 +25,13 @@ This file is the launcher, not the engine. Before step 1, load and follow:
 
 and the inherited references as the contract directs. The launching session runs the full engine: the evidence ledger, groundedness gate, AI-touchpoint scan, and independent review. It does not run only the mechanics below.
 
+**This is a delivery launcher, and the only one the kit ships.** It always mints an Autonomy Grant
+and it needs `until=<domain condition>` — that sentence is what §2 compiles into the Acceptance Gate.
+There is **no launcher for pure loop mode** (unattended iteration with no commit/PR/merge/deploy
+chain). To run that shape, start the gated process by hand with the loop-mode marker and **no grant
+file**, after writing the Loop Contract and triage file yourself; the guard then denies the entire
+irreversible surface (`../thinktank/references/loop-engineering.md` §6a).
+
 ## 1. Refuse the wrong shape first
 
 Decline, in one sentence, when the loop-engineering reference §10 applies (genuinely one-off work · "done" is a shifting judgment call · nothing can mechanically observe success), or when delivery mode's own preconditions fail:
