@@ -1,0 +1,11 @@
+.env
+# install.sh rewrites .env through a temp file and backs up files it replaces.
+# Both can carry the API key, so neither may ever be committable, not even in
+# the window between the script dying and someone noticing.
+.env.tmp.*
+.env.bak.*
+_source/
+_draft/
+.DS_Store
+qdrant_storage/
+node_modules/
