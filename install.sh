@@ -15,6 +15,23 @@
 #
 # Re-running the script is safe. It creates what is missing, leaves what is
 # already there, and backs up any file it would otherwise overwrite.
+#
+# Settings (QDRANT_URL, QDRANT_API_KEY, COLLECTION_NAME, EMBEDDING_MODEL) are
+# read from .env, but an environment variable of the same name wins: .env only
+# fills in what is not already set, so one run can be aimed elsewhere without
+# editing the file:
+#
+#   COLLECTION_NAME=thinktank-scratch ./install.sh
+#
+# "Set" means set, not non-empty - VAR= in the environment is an empty value
+# you chose, and it beats .env too. Docker Compose resolves ${...} the same
+# way (shell environment before .env), so the container and this script agree
+# on what they are using. See scripts/lib/load-env.sh for the reader and its
+# parsing rules.
+#
+# Step 2 is unaffected by this: it still creates .env and generates a key into
+# the file. Exporting QDRANT_API_KEY changes which key this run *uses*, not
+# what gets written.
 
 set -euo pipefail
 
@@ -210,10 +227,16 @@ fi
 
 umask "${PREV_UMASK}"
 
-set -a
-# shellcheck disable=SC1090
-. "${ENV_FILE}"
-set +a
+# Not `set -a; . .env; set +a`: sourcing assigns, so the file would overwrite
+# the environment instead of filling it in, and `COLLECTION_NAME=x ./install.sh`
+# would be ignored. load_env_file sets only what is unset, and never executes
+# the file.
+LOAD_ENV_LIB="${REPO_ROOT}/scripts/lib/load-env.sh"
+[ -f "${LOAD_ENV_LIB}" ] || fail "scripts/lib/load-env.sh is missing from ${REPO_ROOT}. The repository looks incomplete."
+# shellcheck source=scripts/lib/load-env.sh
+. "${LOAD_ENV_LIB}"
+
+load_env_file "${ENV_FILE}"
 
 QDRANT_URL="${QDRANT_URL:-http://localhost:6333}"
 COLLECTION_NAME="${COLLECTION_NAME:-thinktank-memory}"

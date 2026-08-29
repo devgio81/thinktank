@@ -12,6 +12,17 @@
 # It will not write to a target whose vector size or distance metric differs
 # from the source. Mixed vectors are worse than no migration: every subsequent
 # search would silently return nonsense.
+#
+# Reads QDRANT_URL, QDRANT_API_KEY and COLLECTION_NAME (the migration target)
+# from .env in the repo root. An environment variable of the same name wins:
+# .env only fills in what is not already set, so a single run can be aimed at
+# another target without editing the file:
+#
+#   COLLECTION_NAME=thinktank-memory-v2 ./scripts/migrate-collection.sh old
+#
+# "Set" means set, not non-empty - VAR= in the environment is an empty value
+# you chose, and it beats .env too. See scripts/lib/load-env.sh for the reader
+# and its parsing rules.
 
 set -euo pipefail
 
@@ -43,7 +54,9 @@ Usage:
                      nothing
   --batch N          points per scroll page and per upsert (default 128)
 
-The target is COLLECTION_NAME from .env (default: thinktank-memory).
+The target is COLLECTION_NAME from .env (default: thinktank-memory). A
+COLLECTION_NAME already set in the environment wins over .env, so you can aim
+one run elsewhere without editing the file.
 
 Example:
   ./scripts/migrate-collection.sh my-old-memory --dry-run
@@ -86,12 +99,15 @@ esac
 [ "${BATCH}" -gt 0 ] || fail "--batch must be greater than zero."
 
 # --- load .env -------------------------------------------------------------
-if [ -f "${ENV_FILE}" ]; then
-  set -a
-  # shellcheck disable=SC1090
-  . "${ENV_FILE}"
-  set +a
-fi
+# Not `set -a; . .env; set +a`: sourcing assigns, so the file would overwrite
+# the environment instead of filling it in. load_env_file sets only what is
+# unset, and never executes the file.
+LOAD_ENV_LIB="${SCRIPT_DIR}/lib/load-env.sh"
+[ -f "${LOAD_ENV_LIB}" ] || fail "scripts/lib/load-env.sh is missing. The repository looks incomplete."
+# shellcheck source=lib/load-env.sh
+. "${LOAD_ENV_LIB}"
+
+load_env_file "${ENV_FILE}"
 
 QDRANT_URL="${QDRANT_URL:-http://localhost:6333}"
 TARGET_COLLECTION="${COLLECTION_NAME:-thinktank-memory}"

@@ -38,6 +38,8 @@ scripts/
   qdrant-mcp-launcher.sh
                       starts the MCP server with the API key read from .env,
                       so the key never reaches a command line
+  lib/load-env.sh     reads .env without executing it, and without letting it
+                      overwrite variables already set in the environment
 docs/                 setup notes
 install.sh            copies skills/, agents/ and hooks/ into ~/.claude/
 docker-compose.yml    the local Qdrant service

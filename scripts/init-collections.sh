@@ -10,8 +10,15 @@
 #   ./scripts/init-collections.sh
 #
 # Reads QDRANT_URL, QDRANT_API_KEY, COLLECTION_NAME and EMBEDDING_MODEL from
-# .env in the repo root; each may be overridden by an environment variable of
-# the same name.
+# .env in the repo root. An environment variable of the same name wins: .env
+# only fills in what is not already set, so a single run can be pointed
+# somewhere else without editing the file:
+#
+#   COLLECTION_NAME=scratch ./scripts/init-collections.sh
+#
+# "Set" means set, not non-empty - VAR= in the environment is an empty value
+# you chose, and it beats .env too. See scripts/lib/load-env.sh for the reader
+# and its parsing rules.
 
 set -euo pipefail
 
@@ -24,13 +31,16 @@ ok()   { printf '  [ok]   %s\n' "$*"; }
 fail() { printf '  [fail] %s\n' "$*" >&2; exit 1; }
 
 # --- load .env -------------------------------------------------------------
-if [ -f "${ENV_FILE}" ]; then
-  # `set -a` exports everything sourced, so the values reach child processes.
-  set -a
-  # shellcheck disable=SC1090
-  . "${ENV_FILE}"
-  set +a
-fi
+# Not `set -a; . .env; set +a`: sourcing assigns, so the file would overwrite
+# the environment instead of filling it in, and `COLLECTION_NAME=x ./init...`
+# would be ignored. load_env_file sets only what is unset, and never executes
+# the file.
+LOAD_ENV_LIB="${SCRIPT_DIR}/lib/load-env.sh"
+[ -f "${LOAD_ENV_LIB}" ] || fail "scripts/lib/load-env.sh is missing. The repository looks incomplete."
+# shellcheck source=lib/load-env.sh
+. "${LOAD_ENV_LIB}"
+
+load_env_file "${ENV_FILE}"
 
 QDRANT_URL="${QDRANT_URL:-http://localhost:6333}"
 COLLECTION_NAME="${COLLECTION_NAME:-thinktank-memory}"
