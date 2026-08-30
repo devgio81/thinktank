@@ -42,6 +42,14 @@ scripts/
   lib/load-env.sh     reads .env without executing it, and without letting it
                       overwrite variables already set in the environment
                       (install.sh fails without this file)
+  lib/preflight.sh    step 1's checks: whether every ~/.claude directory step 6
+                      actually has to write into can be written to, and the URL
+                      and port helpers step 2 uses
+                      (install.sh fails without this file)
+  lib/curl-auth.sh    passes the API key to curl through a mode-0600 config
+                      file, so it never appears in a command line
+                      (install.sh, init-collections.sh and
+                      migrate-collection.sh fail without this file)
 docs/                 setup notes
 install.sh            copies skills/, agents/ and hooks/ into ~/.claude/
 docker-compose.yml    the local Qdrant service
@@ -86,8 +94,51 @@ first real recall.
 
 You do not need to start Qdrant first. Step 3 starts the container defined in
 `docker-compose.yml`. Once `.env` exists, you can also start it yourself from this directory
-with `docker compose up -d`. That step fails if another container or process already holds
-port 6333. Free the port before running the installer.
+with `docker compose up -d`.
+
+If port 6333 is already taken, do not free it — move ThinkTank instead. 6333 is the Qdrant
+default, and anyone installing a RAG engineering kit is likely to have a Qdrant of their own
+on it already. Set both of these in `.env`, in the same edit:
+
+```
+QDRANT_HOST_PORT=6343
+QDRANT_URL=http://localhost:6343
+```
+
+The first moves the port `docker-compose.yml` publishes; the second is the address the
+installer and the MCP server connect to. Inside the container Qdrant still listens on 6333,
+and the compose healthcheck still checks 6333, because that check runs inside the container.
+`QDRANT_GRPC_HOST_PORT` (default 6334) moves the gRPC port the same way.
+
+The installer does not derive one setting from the other — `QDRANT_URL` may legitimately name
+a host this compose file does not manage, and rewriting its port from a local compose setting
+would silently redirect a deliberate choice. Step 2 compares the two instead and stops, naming
+both values, if a local `QDRANT_URL` disagrees with `QDRANT_HOST_PORT`.
+
+Step 1 also checks that every `~/.claude` directory step 6 actually has to write into can be
+written to, before step 6 copies anything. A read-only `~/.claude/hooks` is a hardening this
+engine recommends itself (see *Filesystem hardening* in
+`skills/thinktank/references/delivery-loop.md`): without the write bit on the directory, no
+one can rename or replace the guard hook — including this installer, whose backup step is a
+rename.
+
+The check compares before it blocks, and the difference matters if you have applied that
+hardening. It reads each tree file by file — reading still works at `dr-x------` — and asks
+not "is this directory writable" but "does anything in it have to be written". A read-only
+directory that already holds exactly the files this kit ships is announced, skipped, and the
+run continues; step 6 then reports that tree as **skipped**, never as installed. Only a
+directory that has to receive a missing or changed file stops the run. Without that
+distinction, following the hardening advice would lock you out of your own installer — you
+could not re-run it to smoke-test the backend or to catch up a missing MCP registration.
+
+When it does stop, it names the directory and its mode, and prints the three commands
+(unlock, install, lock again) for you to run. It never lifts the protection itself.
+
+The API key never reaches a command line anywhere in this repository. `claude mcp add` is
+called without it (the launcher reads it from `.env` at startup), and every `curl` call in
+`install.sh`, `init-collections.sh` and `migrate-collection.sh` takes it from a mode-0600
+config file via `-K` rather than from `-H "api-key: …"` — an argument is visible to any local
+process in `ps` for as long as the call runs. See `scripts/lib/curl-auth.sh`.
 
 The script deliberately leaves two things to you. It never edits your `settings.json`, and it
 never rotates an API key already stored in `.env`. As a result, a second run cannot cut the

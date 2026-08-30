@@ -24,8 +24,24 @@ services:
     ports:
       # 6333 = REST + web UI, 6334 = gRPC. Bound to 127.0.0.1 on purpose:
       # the API key is the second line of defence, not the first.
-      - "127.0.0.1:6333:6333"
-      - "127.0.0.1:6334:6334"
+      #
+      # Only the HOST side is variable. 6333 is where Qdrant listens inside the
+      # container, it is configured nowhere, and moving it here would publish a
+      # port nothing is bound to - so the right-hand number, and the port in the
+      # healthcheck below, stay 6333 whatever the host port is.
+      #
+      # Why this is a variable at all: 6333 is the Qdrant default, and the
+      # people this kit is for are the people most likely to be running a Qdrant
+      # already. Taking that port silently is how a working setup breaks. Set
+      # QDRANT_HOST_PORT in .env, together with QDRANT_URL - install.sh refuses
+      # to continue when the two disagree.
+      #
+      # The :-6333 default matters for `docker compose up -d` run by hand: the
+      # variable then usually comes from .env, and a .env written before this
+      # was configurable has no such line. Without the default, compose would
+      # publish ":6333" and fail with a syntax error on an otherwise fine setup.
+      - "127.0.0.1:${QDRANT_HOST_PORT:-6333}:6333"
+      - "127.0.0.1:${QDRANT_GRPC_HOST_PORT:-6334}:6334"
     environment:
       # Read from .env. install.sh generates a random key on first run.
       QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:?QDRANT_API_KEY is not set - copy .env.example to .env or run ./install.sh}
@@ -40,6 +56,11 @@ services:
       # connection with bash's /dev/tcp instead of calling an HTTP endpoint.
       # Host-side readiness (GET /readyz) is polled by install.sh, which does
       # have curl available.
+      #
+      # 6333 hard-coded on purpose. This command runs INSIDE the container,
+      # where the published host port does not exist. Wiring QDRANT_HOST_PORT in
+      # here would make every non-default port report a permanently unhealthy
+      # container that is in fact serving perfectly.
       test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/6333' || exit 1"]
       interval: 10s
       timeout: 5s

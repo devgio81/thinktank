@@ -8,7 +8,8 @@ restates these rules.
 
 Memory runs on `mcp-server-qdrant` against a **local** Qdrant instance at `http://localhost:6333`,
 started from the `docker-compose.yml` in the ThinkTank repository. The service is named `qdrant`,
-the container is named **`thinktank-qdrant`**, and the image is pinned to `qdrant/qdrant:v1.19.0`
+the container is named **`thinktank-qdrant`** by default — read `container_name` from that file
+rather than assuming it, since an operator may have changed it — and the image is pinned to `qdrant/qdrant:v1.19.0`
 (`:latest` would let the engine change under an existing storage volume). The MCP server computes
 embeddings client-side through fastembed (`sentence-transformers/all-MiniLM-L6-v2`, 384 dimensions,
 cosine). Nothing leaves the machine: there is no external embedding service, hosted vector database
@@ -33,7 +34,8 @@ docker compose ps             # confirms it is running
 ```
 
 The service declares `restart: unless-stopped`, so it comes back with the Docker daemon. An existing
-container that was stopped by hand restarts with `docker start thinktank-qdrant`. Do not start a
+container that was stopped by hand restarts with `docker compose up -d`, which needs no container
+name and is therefore right whatever `container_name` says. Do not start a
 Qdrant of your own beside it: a hand-started container occupies port 6333 and the compose service
 then fails.
 
@@ -153,8 +155,9 @@ returns errors twice in a row. Then:
    acquisition lane can still answer the current question, but it cannot write back, so its facts are
    queued the same way.
 6. If the user asks why memory is off, say that the local Qdrant instance is not reachable and name
-   the container to start: `docker compose up -d` in the ThinkTank repository, or
-   `docker start thinktank-qdrant`.
+   the container to start: `docker compose up -d` in the ThinkTank repository. Prefer that over
+   `docker start <name>`; compose resolves the container itself, so a changed `container_name`
+   cannot send you after an object that does not exist.
 
 **Acquisition lane unavailable.** The lane is unavailable if it lacks configuration or
 authentication, has no relevant notebook, or has reached the daily query limit. Record the gap and

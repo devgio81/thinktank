@@ -45,7 +45,11 @@ STAMP="$(date +%Y%m%d-%H%M%S)"
 step()  { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 log()   { printf '  %s\n' "$*"; }
 ok()    { printf '  [ok]   %s\n' "$*"; }
-warn()  { printf '  [warn] %s\n' "$*"; }
+# Warnings go to stderr, like fail(), so that a run captured with `> install.log`
+# does not silently drop half of them: scripts/lib/preflight.sh already writes
+# its warnings there, and two diagnostics on two different streams means whoever
+# reads one of them reads an incomplete run.
+warn()  { printf '  [warn] %s\n' "$*" >&2; }
 fail()  { printf '\n  [fail] %s\n\n' "$*" >&2; exit 1; }
 
 usage() {
@@ -169,6 +173,53 @@ fi
 # SILENTLY - it would parse nothing, match nothing, and allow everything.
 ok "jq found (required by hooks/tt-loop-guard.sh and scripts/migrate-collection.sh)"
 
+# --- can step 6 actually write where it is going? --------------------------
+#
+# Asked here, five steps early, because the alternative is finding out in the
+# middle of the copy. That is not hypothetical. An installation run stopped on
+#
+#   mv: rename ~/.claude/hooks/tt-loop-completion-gate.sh to
+#       ~/.claude/hooks/tt-loop-completion-gate.sh.bak.<stamp>: Permission denied
+#
+# with ~/.claude/hooks at mode 0500. Skills and agents were already installed;
+# the hooks and the MCP registration were not; and the only thing the user was
+# handed was that one line of mv output. A directory's write bit governs
+# creating, deleting and renaming entries - not writing to a file that already
+# exists - so an unwritable directory stops the backup even though every file
+# in it is readable.
+#
+# The mode is very probably intentional: this kit's own delivery-loop reference
+# recommends taking the write bit off ~/.claude/hooks. So the check reports and
+# stops. It never changes a mode, and neither does anything else in this
+# script; the reasoning sits next to the function in scripts/lib/preflight.sh.
+#
+# What it does NOT do is block on a read-only directory that needs no writing.
+# The check compares each tree against the repository first, and a directory
+# whose files are already byte-identical is skipped with a warning rather than
+# treated as an obstacle - otherwise anyone who had actually applied the
+# hardening could never run this installer again, not even to register the MCP
+# server. Step 6 reports such a tree as skipped.
+PREFLIGHT_LIB="${REPO_ROOT}/scripts/lib/preflight.sh"
+[ -f "${PREFLIGHT_LIB}" ] || fail "scripts/lib/preflight.sh is missing from ${REPO_ROOT}. The repository looks incomplete."
+# shellcheck source=scripts/lib/preflight.sh
+. "${PREFLIGHT_LIB}"
+
+if check_install_targets_writable "${CLAUDE_HOME}" "${REPO_ROOT}"; then
+  # Do not list the trees here. A tree that was skipped for being read-only and
+  # already current is reported two lines above; naming it again as writable
+  # contradicts that warning on the very next line.
+  if [ -n "${PREFLIGHT_SKIPPED_TREES:-}" ]; then
+    ok "step 6 can write everything it has to into ${CLAUDE_HOME} (skipping:${PREFLIGHT_SKIPPED_TREES})"
+  else
+    ok "step 6 can write everything it has to into ${CLAUDE_HOME} (skills, agents, hooks)"
+  fi
+else
+  # The function has already printed which directory, its mode, why it is
+  # probably deliberate, and the three commands. Repeating any of that here
+  # would only push it off the screen.
+  exit 1
+fi
+
 # ===========================================================================
 # 2. .env and API key
 # ===========================================================================
@@ -178,10 +229,26 @@ step "2/9  Environment file"
 # between creating it and moving it into place, the key would be left lying in
 # the repository working tree. The trap removes it on every exit path.
 TMP_ENV=""
+# Step 6 keeps its file manifests here. Declared next to TMP_ENV so a single
+# trap covers both; a second trap would replace this one rather than add to it.
+TT_SCAN_DIR=""
+# The curl config file created further down holds the API key. Same reasoning
+# as TMP_ENV: it must not survive an abort, and one trap has to cover every
+# temporary thing this script creates, because a second `trap ... EXIT` would
+# replace this one instead of adding to it.
+CURL_AUTH_LIB="${REPO_ROOT}/scripts/lib/curl-auth.sh"
+[ -f "${CURL_AUTH_LIB}" ] || fail "scripts/lib/curl-auth.sh is missing from ${REPO_ROOT}. The repository looks incomplete."
+# shellcheck source=scripts/lib/curl-auth.sh
+. "${CURL_AUTH_LIB}"
+
 cleanup_tmp_env() {
   if [ -n "${TMP_ENV}" ] && [ -f "${TMP_ENV}" ]; then
     rm -f "${TMP_ENV}"
   fi
+  if [ -n "${TT_SCAN_DIR}" ] && [ -d "${TT_SCAN_DIR}" ]; then
+    rm -rf "${TT_SCAN_DIR}"
+  fi
+  curl_auth_file_remove
   return 0
 }
 trap cleanup_tmp_env EXIT INT TERM
@@ -252,9 +319,95 @@ COLLECTION_NAME="${COLLECTION_NAME:-thinktank-memory}"
 EMBEDDING_MODEL="${EMBEDDING_MODEL:-sentence-transformers/all-MiniLM-L6-v2}"
 [ -n "${QDRANT_API_KEY:-}" ] || fail "QDRANT_API_KEY is still empty after setup. Check ${ENV_FILE} by hand."
 
+# Every curl call below authenticates through this file instead of through
+# `-H "api-key: ${QDRANT_API_KEY}"`. The header in an argument is visible to
+# any local process in `ps` for as long as the call runs; the file is mode 0600
+# and only its name reaches argv. See scripts/lib/curl-auth.sh for the full
+# reasoning and the measurement. The trap installed above removes it on every
+# exit path, including an abort halfway through the smoke test.
+curl_auth_file_create "${QDRANT_API_KEY}" \
+  || fail "Could not create a temporary curl configuration file in ${TMPDIR:-/tmp}.
+         The API key is passed to curl through that file so it never appears in
+         the process list. Check that ${TMPDIR:-/tmp} is writable, then run this
+         script again."
+
+# --- host ports ------------------------------------------------------------
+#
+# docker-compose.yml publishes Qdrant as ${QDRANT_HOST_PORT}:6333 and
+# ${QDRANT_GRPC_HOST_PORT}:6334. Only the host side moves. Inside the container
+# Qdrant listens on 6333 and 6334 whatever is set here, which is also why the
+# compose healthcheck stays on 6333: it runs in the container, where the
+# published port does not exist.
+#
+# Resolved here in step 2, not in step 3, because the consistency check below
+# needs QDRANT_URL. Exported so `${COMPOSE} up -d` in step 3 resolves the same
+# values this script uses - compose reads the environment before .env, and a
+# default that lived only in this shell would let the two disagree.
+QDRANT_HOST_PORT="${QDRANT_HOST_PORT:-6333}"
+QDRANT_GRPC_HOST_PORT="${QDRANT_GRPC_HOST_PORT:-6334}"
+export QDRANT_HOST_PORT QDRANT_GRPC_HOST_PORT
+
+valid_port "${QDRANT_HOST_PORT}" || fail "QDRANT_HOST_PORT='${QDRANT_HOST_PORT}' is not a port number (1-65535). Fix it in ${ENV_FILE}."
+valid_port "${QDRANT_GRPC_HOST_PORT}" || fail "QDRANT_GRPC_HOST_PORT='${QDRANT_GRPC_HOST_PORT}' is not a port number (1-65535). Fix it in ${ENV_FILE}."
+if [ "${QDRANT_HOST_PORT}" = "${QDRANT_GRPC_HOST_PORT}" ]; then
+  fail "QDRANT_HOST_PORT and QDRANT_GRPC_HOST_PORT are both ${QDRANT_HOST_PORT}. One host port
+         cannot serve both the REST API and gRPC; 'compose up -d' would fail on the
+         duplicate binding. Give them two different ports in ${ENV_FILE}."
+fi
+
+# --- do QDRANT_URL and QDRANT_HOST_PORT agree? -----------------------------
+#
+# CHECKED, NOT DERIVED. The tempting shortcut is to rebuild QDRANT_URL from
+# QDRANT_HOST_PORT and be done with it. That is wrong in the one case where it
+# would matter: QDRANT_URL is a complete address, and it may deliberately point
+# at a Qdrant this compose file does not manage - another host, a tunnel, an
+# instance someone else operates. Overwriting its port from a local compose
+# setting would silently redirect that. Deriving also only appears to remove the
+# failure mode: nothing stops QDRANT_URL naming a different HOST, so a check is
+# needed regardless, at which point the derivation is just a second, hidden
+# source of truth.
+#
+# So: the two values stay independent, and disagreement is reported with both
+# numbers and both file lines. It costs an error message on a half-done edit -
+# which is the moment the user is still holding the file open - instead of a
+# container on one port and a script talking to another.
+URL_HOST="$(url_host "${QDRANT_URL}")"
+URL_PORT="$(url_port "${QDRANT_URL}")"
+
+if [ -z "${URL_PORT}" ]; then
+  warn "Could not read a port out of QDRANT_URL='${QDRANT_URL}'."
+  warn "Skipping the QDRANT_URL/QDRANT_HOST_PORT consistency check - verify it yourself."
+elif host_is_local "${URL_HOST}"; then
+  if [ "${URL_PORT}" != "${QDRANT_HOST_PORT}" ]; then
+    fail "QDRANT_URL and QDRANT_HOST_PORT disagree, and both are about this machine:
+
+           QDRANT_URL=${QDRANT_URL}          -> port ${URL_PORT}
+           QDRANT_HOST_PORT=${QDRANT_HOST_PORT}
+
+         docker-compose.yml would publish Qdrant on 127.0.0.1:${QDRANT_HOST_PORT}, while this
+         script, the MCP launcher and every recall would connect to port ${URL_PORT}.
+         Step 4 would then wait 60 seconds for a container that is up and
+         answering somewhere else.
+
+         Set both lines in ${ENV_FILE} to the same port:
+           QDRANT_HOST_PORT=${QDRANT_HOST_PORT}
+           QDRANT_URL=http://localhost:${QDRANT_HOST_PORT}
+
+         The installer does not fix this for you: it cannot tell which of the two
+         numbers you meant, and guessing wrong sends every stored memory to the
+         wrong instance."
+  fi
+  ok "QDRANT_URL and QDRANT_HOST_PORT agree on port ${QDRANT_HOST_PORT}."
+else
+  warn "QDRANT_URL points at '${URL_HOST}', which is not this machine, so the local"
+  warn "compose ports are not what this run will talk to. Starting the container"
+  warn "anyway; it will publish 127.0.0.1:${QDRANT_HOST_PORT} and nothing here will use it."
+fi
+
 log "url:        ${QDRANT_URL}"
 log "collection: ${COLLECTION_NAME}"
 log "model:      ${EMBEDDING_MODEL}"
+log "host ports: ${QDRANT_HOST_PORT} (REST) / ${QDRANT_GRPC_HOST_PORT} (gRPC) -> 6333/6334 in the container"
 log "The API key lives in ${ENV_FILE} (mode 600) and is never printed here."
 
 # The name of the vector mcp-server-qdrant reads and writes: "fast-" plus the
@@ -269,11 +422,210 @@ VECTOR_NAME_EXPECTED="fast-$(printf '%s' "${EMBEDDING_MODEL##*/}" | tr '[:upper:
 step "3/9  Starting Qdrant"
 
 cd "${REPO_ROOT}"
+
+# QDRANT_HOST_PORT and QDRANT_GRPC_HOST_PORT were resolved, validated and
+# checked against QDRANT_URL at the end of step 2, and exported there so that
+# `${COMPOSE} up -d` below resolves exactly the values used here. Defaulting
+# them again at this point would create a second source of truth that goes
+# stale the first time step 2 learns something the copy does not.
+
+# --- port collision --------------------------------------------------------
+# `compose up -d` takes the host port. On a machine that already runs a Qdrant
+# of its own - the normal case for the people this kit is aimed at, not the
+# exception - that displaces a container someone depends on and points their
+# existing MCP servers at a fresh, empty, differently-keyed instance. The data
+# survives on disk, but the memory is offline and nobody was told.
+#
+# So the port is examined first, and the installer refuses rather than taking
+# what is already in use. The one exception is a container this very compose
+# project created: `compose up -d` is idempotent against its own container, and
+# treating a re-run as a collision would break every second install.
+
+# True when something accepts a TCP connection on the port. This catches a
+# plain listening process as well as a container's published mapping, and needs
+# no lsof/ss/netstat - bash opens the socket itself. The subshell closes the
+# descriptor by exiting, so nothing is left open either way.
+port_is_listening() { ( exec 3<>"/dev/tcp/127.0.0.1/$1" ) >/dev/null 2>&1; }
+
+# Proof that a container belongs to THIS compose project, from three
+# independent angles - any one of them is enough, and none of them is the
+# container's name. A name is not ownership: a `thinktank-qdrant` left behind by
+# a different checkout of this repository carries different labels and is
+# correctly treated as foreign.
+container_is_ours() {
+  local cid="$1" label
+  label="$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "${cid}" 2>/dev/null || true)"
+  [ "${label}" = "${REPO_ROOT}" ] && return 0
+  label="$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project.config_files"}}' "${cid}" 2>/dev/null || true)"
+  case ",${label}," in
+    *",${REPO_ROOT}/docker-compose.yml,"*) return 0 ;;
+  esac
+  # Older compose versions label less. Asking compose itself which containers
+  # the project in this directory owns covers them.
+  local own
+  own="$(${COMPOSE} ps -aq 2>/dev/null || ${COMPOSE} ps -q 2>/dev/null || true)"
+  printf '%s\n' "${own}" | grep -q "^${cid}" && return 0
+  return 1
+}
+
+# A port nothing holds right now, for the "use another port" advice. Naming a
+# fixed number would sooner or later print the port that just failed - which is
+# what happens when the collision is on that number in the first place. So the
+# suggestion is probed, and if the whole window is busy the advice says "a free
+# port" rather than a number that is not one.
+suggest_free_port() {
+  local base="$1" p end
+  end=$(( base + 40 ))
+  p=$(( base + 10 ))
+  while [ "${p}" -le "${end}" ] && [ "${p}" -le 65535 ]; do
+    if ! port_is_listening "${p}" \
+       && [ -z "$(docker ps --filter "publish=${p}" --format '{{.ID}}' 2>/dev/null || true)" ]; then
+      printf '%s' "${p}"
+      return 0
+    fi
+    p=$(( p + 1 ))
+  done
+  return 1
+}
+
+# Both published ports get the same treatment. The REST port is the one that
+# hurt on a real machine, but compose publishes the gRPC port from the same
+# file in the same instant: leaving 6334 unchecked would move the identical
+# failure one line down and surface it as an opaque "up -d failed".
+#
+# QDRANT_URL appears only in the advice for the REST port. It carries no gRPC
+# port, so printing it beside QDRANT_GRPC_HOST_PORT would be a wrong
+# instruction - and step 2 would then reject the file the user just edited.
+assert_port_available() {
+  local port="$1" var="$2" role="$3"
+  local holders foreign own_holder line cid cname free listener url_line
+
+  free="$(suggest_free_port "${port}" || true)"
+  [ -n "${free}" ] || free="<a free port>"
+  url_line=""
+  if [ "${var}" = "QDRANT_HOST_PORT" ]; then
+    url_line="
+               QDRANT_URL=http://localhost:${free}
+             The first moves the published port, the second is what this script
+             and the MCP server connect to - step 2 refuses to continue when the
+             two disagree."
+  fi
+
+  holders="$(docker ps --filter "publish=${port}" --format '{{.ID}} {{.Names}}' 2>/dev/null || true)"
+  foreign=""
+  own_holder=""
+  while IFS= read -r line; do
+    [ -n "${line}" ] || continue
+    cid="${line%% *}"
+    cname="${line#* }"
+    if container_is_ours "${cid}"; then
+      own_holder="${cname}"
+    else
+      foreign="${foreign}${foreign:+, }${cname} (${cid})"
+    fi
+  done <<EOF
+${holders}
+EOF
+
+  if [ -n "${foreign}" ]; then
+    fail "Host port ${port} (${role}) is already published by a container that is not
+         part of this installation: ${foreign}
+
+         The installer will not displace it. Starting ThinkTank here would take
+         the port away from that container and leave anything pointed at
+         localhost:${port} talking to a new, empty Qdrant with a different API key.
+
+         Two ways on:
+           - stop the other service yourself, then re-run ./install.sh:
+               docker stop ${foreign%% *}
+           - or give ThinkTank a port of its own by adding a free one to ${ENV_FILE}:
+               ${var}=${free}${url_line}"
+  elif [ -n "${own_holder}" ]; then
+    ok "Host port ${port} (${role}) is held by this installation's own container (${own_holder}) - 'up -d' is a no-op there."
+  elif port_is_listening "${port}"; then
+    listener=""
+    if command -v lsof >/dev/null 2>&1; then
+      listener="$(lsof -nP -iTCP:"${port}" -sTCP:LISTEN 2>/dev/null | sed -n '2p' | awk '{print $1" (pid "$2")"}' || true)"
+    fi
+    fail "Host port ${port} (${role}) is already in use by a process on this machine${listener:+: ${listener}}.
+         It is not a Docker container, so no container name can be reported.
+         Find it with:  lsof -nP -iTCP:${port} -sTCP:LISTEN
+
+         The installer will not take the port. Stop that process, or give
+         ThinkTank a port of its own in ${ENV_FILE}:
+               ${var}=${free}${url_line}"
+  else
+    ok "Host port ${port} (${role}) is free."
+  fi
+}
+
+assert_port_available "${QDRANT_HOST_PORT}"      QDRANT_HOST_PORT      "REST"
+assert_port_available "${QDRANT_GRPC_HOST_PORT}" QDRANT_GRPC_HOST_PORT "gRPC"
+
+# --- what is this container actually called? -------------------------------
+#
+# Read, not assumed. Both messages below used to say "thinktank-qdrant" as a
+# literal, while docker-compose.yml carries `container_name:` as an ordinary,
+# editable line. Anyone who changed it got a success message naming a container
+# that does not exist and a `docker ps --filter name=...` that matches nothing -
+# a confident statement about the wrong object, which is worse than saying
+# nothing.
+#
+# `compose config` renders the file with variables resolved, so it answers for
+# the file that is really in effect, overrides included. It is not called for
+# anything but this name, and its output is only ever piped - it also renders
+# the API key, which must not reach the terminal.
+compose_container_name() {
+  local n=""
+  # jq is a hard prerequisite (step 1), so the structured path is always
+  # available; --format json is not, on an older compose.
+  n="$(${COMPOSE} config --format json 2>/dev/null | jq -r '.services.qdrant.container_name // empty' 2>/dev/null || true)"
+  if [ -z "${n}" ] || [ "${n}" = "null" ]; then
+    # YAML fallback for a compose without --format json. Single service, so the
+    # first container_name is the right one; if a second service is ever added
+    # here, this line needs to become service-aware.
+    n="$(${COMPOSE} config 2>/dev/null | sed -n 's/^[[:space:]]*container_name:[[:space:]]*//p' | head -n1)"
+  fi
+  [ -n "${n}" ] || return 1
+  printf '%s' "${n}"
+}
+
+# Once the container exists, compose can be asked what it actually called it.
+# That is the better source of the two, and it is the only one that answers at
+# all for a compose file carrying no `container_name:` line, where the name is
+# generated as <project>-<service>-1. Only usable after `up -d`, which is why
+# the config reader above still exists for the failure branch.
+running_container_name() {
+  local n=""
+  n="$(${COMPOSE} ps --format json qdrant 2>/dev/null \
+       | jq -r 'if type=="array" then .[0].Name else .Name end // empty' 2>/dev/null || true)"
+  if [ -z "${n}" ] || [ "${n}" = "null" ]; then
+    n="$(${COMPOSE} ps --format '{{.Name}}' qdrant 2>/dev/null | head -n1)"
+  fi
+  [ -n "${n}" ] || return 1
+  printf '%s' "${n}"
+}
+
+# Never invented when it cannot be read: an empty value makes the messages
+# below describe the container instead of naming it. A missing name is a small
+# loss; a wrong one sends the reader looking for something that was never there.
+QDRANT_CONTAINER="$(compose_container_name || true)"
+
 if ${COMPOSE} up -d; then
-  ok "Container thinktank-qdrant is up."
+  QDRANT_CONTAINER="$(running_container_name || printf '%s' "${QDRANT_CONTAINER}")"
+  if [ -n "${QDRANT_CONTAINER}" ]; then
+    ok "Container ${QDRANT_CONTAINER} is up."
+  else
+    ok "The Qdrant container is up (its name could not be read from the compose file)."
+  fi
 else
-  fail "'${COMPOSE} up -d' failed. Read the output above - a port conflict on 6333 and a stale container of the same name are the usual causes.
-         Inspect with: docker ps -a --filter name=thinktank-qdrant"
+  if [ -n "${QDRANT_CONTAINER}" ]; then
+    fail "'${COMPOSE} up -d' failed. Read the output above - a port conflict on ${QDRANT_HOST_PORT} and a stale container of the same name are the usual causes.
+         Inspect with: docker ps -a --filter name=${QDRANT_CONTAINER}"
+  else
+    fail "'${COMPOSE} up -d' failed. Read the output above - a port conflict on ${QDRANT_HOST_PORT} and a stale container of the same name are the usual causes.
+         Inspect with: ${COMPOSE} ps -a"
+  fi
 fi
 
 # ===========================================================================
@@ -297,9 +649,28 @@ READYZ_MISSING=0
 DEADLINE=$(( $(date +%s) + 60 ))
 attempt=0
 
+# -s, deliberately NOT -sS.
+#
+# -S re-enables error messages that -s suppressed, and this is the one caller
+# in the script that runs in a loop. Against an unreachable target it printed
+# about twenty
+#
+#   curl: (7) Failed to connect to 127.0.0.1 port 6399: Couldn't connect to server
+#
+# lines, which pushed the [fail] message that explains what to do off the top of
+# the terminal. Nothing is lost by dropping -S: the HTTP status is what this
+# function returns, "000" already means "no answer at all", and the failure path
+# below prints the container's own logs, which say considerably more than
+# curl's connect error does.
+#
+# The single-shot calls in step 9 keep -sS on purpose - there one error line is
+# the useful thing rather than a wall.
+#
+# The API key comes from ${CURL_AUTH_FILE} (mode 0600), not from -H, so it is
+# not in this process's argv while the poll runs.
 probe() {
-  curl -sS -o /dev/null -w '%{http_code}' --max-time 3 \
-    -H "api-key: ${QDRANT_API_KEY}" "${QDRANT_URL}$1" || printf '000'
+  curl -s -o /dev/null -w '%{http_code}' --max-time 3 \
+    -K "${CURL_AUTH_FILE}" "${QDRANT_URL}$1" || printf '000'
 }
 
 while [ "$(date +%s)" -lt "${DEADLINE}" ]; do
@@ -366,10 +737,26 @@ fi
 # ===========================================================================
 step "6/9  Installing skills, agents and hooks into ${CLAUDE_HOME}"
 
-mkdir -p "${CLAUDE_HOME}/skills" "${CLAUDE_HOME}/agents" "${CLAUDE_HOME}/hooks"
+# `mkdir -p` on a directory that already exists is a no-op and needs no write
+# permission on it, which is what lets this line stand in front of a read-only
+# but complete ~/.claude/hooks.
+if ! mkdir -p "${CLAUDE_HOME}/skills" "${CLAUDE_HOME}/agents" "${CLAUDE_HOME}/hooks" 2>/dev/null; then
+  fail "Could not create the target directories under ${CLAUDE_HOME}.
+         Step 1 checked that anything still missing could be created, so
+         something changed since - or one of them is now a file rather than a
+         directory.
+         Check with: ls -ld ${CLAUDE_HOME} ${CLAUDE_HOME}/skills ${CLAUDE_HOME}/agents ${CLAUDE_HOME}/hooks"
+fi
 
 installed=0
 backed_up=0
+failed=0
+# Counted separately from "installed", and reported, because a re-run installs
+# almost nothing: the files are already identical. Without this number the
+# summary of such a run reads "0 installed", which looks like a failed copy
+# rather than a directory that was already correct.
+unchanged=0
+FAILED_LIST=""
 
 # Copy one file, preserving anything already at the destination under a
 # timestamped name. Identical files are skipped, so a re-run does not litter
@@ -380,46 +767,274 @@ backed_up=0
 # common umask of 022, `cp` would give the loop guard hook mode 0755: readable
 # by every local user, and the guard is exactly the file whose contents an
 # attacker would want to read before working around it.
+#
+# NOTHING IN HERE IS ALLOWED TO KILL THE SCRIPT.
+#
+# It used to. `set -e` plus an unchecked `mv` is how a run ended on a bare
+#
+#   mv: rename .../tt-loop-completion-gate.sh to ....bak.<stamp>: Permission denied
+#
+# in the middle of the tree, with no summary, no exit code anyone read, and no
+# statement of what had already been copied. Step 1 now makes that particular
+# cause unreachable, but a check is a prediction and the copy is the event: a
+# mode can change between them, a filesystem can fill up, a file can turn out to
+# be an unreadable symlink. So each failure is recorded with its reason and the
+# walk continues, which is what makes the inventory printed afterwards complete
+# rather than "everything up to the first problem".
+record_failure() {
+  FAILED_LIST="${FAILED_LIST}${1}
+    ${2}
+"
+  failed=$((failed + 1))
+}
+
 install_file() {
-  local src="$1" dest="$2" mode="$3"
-  mkdir -p "$(dirname "${dest}")"
+  local src="$1" dest="$2" mode="$3" err=""
+
+  if ! err="$(mkdir -p "$(dirname "${dest}")" 2>&1)"; then
+    record_failure "${dest}" "could not create its directory: ${err}"
+    return 0
+  fi
+
   if [ -f "${dest}" ]; then
     if cmp -s "${src}" "${dest}"; then
-      chmod "${mode}" "${dest}" || warn "could not set mode ${mode} on ${dest}"
+      chmod "${mode}" "${dest}" 2>/dev/null || warn "could not set mode ${mode} on ${dest}"
+      unchanged=$((unchanged + 1))
       return 0
     fi
-    mv "${dest}" "${dest}.bak.${STAMP}"
+    # Renaming an entry needs write permission on the DIRECTORY, not on the
+    # file. This is the line the real failure happened on.
+    if ! err="$(mv "${dest}" "${dest}.bak.${STAMP}" 2>&1)"; then
+      record_failure "${dest}" "could not back up the existing file: ${err}"
+      return 0
+    fi
     backed_up=$((backed_up + 1))
   fi
-  cp "${src}" "${dest}"
-  chmod "${mode}" "${dest}" || warn "could not set mode ${mode} on ${dest}"
+
+  if ! err="$(cp "${src}" "${dest}" 2>&1)"; then
+    record_failure "${dest}" "could not be copied: ${err}"
+    return 0
+  fi
+  chmod "${mode}" "${dest}" 2>/dev/null || warn "could not set mode ${mode} on ${dest}"
   installed=$((installed + 1))
 }
 
+# --- leftovers from an earlier version -------------------------------------
+# install_file copies one file at a time and never removes one. That is right
+# for what it does, but it means an upgrade only ever adds: a file the kit used
+# to ship and no longer does simply stays behind. Observed on a real upgrade -
+# five reference files from an older version of the same skill sitting next to
+# the fifteen current ones, indistinguishable to anyone reading the directory.
+#
+# They are reported, never deleted. This is the deliberate choice, not
+# timidity: the destination is the user's own ~/.claude, the same directories
+# hold their own notes and their own agents, and an installer that quietly
+# removes files it does not recognise is a far worse failure mode than a few
+# stale ones. The user gets the list and a ready-made rm; the decision stays
+# theirs.
+#
+# Two limits, stated rather than hidden:
+#   - Only directories the kit writes into are examined, one level deep. A
+#     whole directory from an older version whose name the kit no longer uses
+#     is not seen.
+#   - In a directory the kit shares with the user (~/.claude/agents and
+#     ~/.claude/hooks hold their files too), only names inside the kit's own
+#     namespace are claimed. Everything else there is theirs, and saying
+#     otherwise about 40 unrelated agents would make the report worthless.
+ORPHAN_LIST=""
+
+scan_for_orphans() {
+  local src_dir="$1" dest_dir="$2" shared_glob="$3"
+  local manifest="${TT_SCAN_DIR}/manifest" dirs="${TT_SCAN_DIR}/dirs"
+  local src rel d scan f base rel_dest
+
+  : > "${manifest}"
+  : > "${dirs}"
+  while IFS= read -r src; do
+    rel="${src#"${src_dir}/"}"
+    printf '%s\n' "${rel}" >> "${manifest}"
+    printf '%s\n' "$(dirname "${rel}")" >> "${dirs}"
+  done < <(find "${src_dir}" -type f ! -name '.DS_Store')
+  sort -u "${dirs}" -o "${dirs}"
+
+  while IFS= read -r d; do
+    if [ "${d}" = "." ]; then
+      # The destination root, shared with the user. Without a namespace to
+      # scope the claim there is nothing defensible to report.
+      [ -n "${shared_glob}" ] || continue
+      scan="${dest_dir}"
+    else
+      # A directory that exists only because the kit created it. Everything in
+      # it that the kit does not ship is a leftover.
+      scan="${dest_dir}/${d}"
+    fi
+    [ -d "${scan}" ] || continue
+    while IFS= read -r f; do
+      base="$(basename "${f}")"
+      case "${base}" in
+        .DS_Store) continue ;;
+        # A backup this script made: <name>.bak.YYYYmmdd-HHMMSS. Matched on the
+        # shape, not on ".bak" alone, so a file the user happens to have called
+        # something.bak.old is still reported rather than excused.
+        *.bak.[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]) continue ;;
+      esac
+      if [ "${d}" = "." ]; then
+        case "${base}" in
+          ${shared_glob}) : ;;
+          *) continue ;;
+        esac
+      fi
+      rel_dest="${f#"${dest_dir}/"}"
+      if ! grep -qxF "${rel_dest}" "${manifest}"; then
+        ORPHAN_LIST="${ORPHAN_LIST}${f}
+"
+      fi
+    done < <(find "${scan}" -maxdepth 1 -type f)
+  done < "${dirs}"
+}
+
+# Per-tree tallies, so the summary can say WHICH of the three is incomplete.
+# "3 files failed" across the whole step does not tell anyone whether the hooks
+# are in place, and that is the only one of the three that gates anything.
+TREE_REPORT=""
+
 copy_tree() {
-  local src_dir="$1" dest_dir="$2" label="$3" mode="$4"
+  local src_dir="$1" dest_dir="$2" label="$3" mode="$4" shared_glob="${5:-}"
+  local before_i="${installed}" before_f="${failed}" before_b="${backed_up}"
+  local before_u="${unchanged}"
+  local n_i n_f n_b n_u
   if [ ! -d "${src_dir}" ]; then
     warn "No ${label} directory in the repository - skipping."
+    TREE_REPORT="${TREE_REPORT}${label}: not in the repository, nothing installed
+"
     return 0
   fi
   if [ -z "$(find "${src_dir}" -type f -print -quit)" ]; then
     warn "${label} directory is empty - skipping."
+    TREE_REPORT="${TREE_REPORT}${label}: empty in the repository, nothing installed
+"
+    return 0
+  fi
+  # Step 1 found this tree read-only and, by comparing it file by file, found
+  # it already complete. Walking it anyway would work - install_file's cmp -s
+  # branch touches nothing - but it would count every file as "already current"
+  # and the summary would then be indistinguishable from a tree the installer
+  # had really gone through. It did not go through this one, and the inventory
+  # has to say so.
+  if preflight_tree_skipped "${label}"; then
+    warn "${label}: ${dest_dir} is read-only and already holds every file this kit ships - skipped, nothing written."
+    TREE_REPORT="${TREE_REPORT}${label}: SKIPPED - directory read-only, all files verified byte-identical in step 1, nothing written -> ${dest_dir}
+"
+    # The orphan scan reads and reports only; it never deletes, so it is just
+    # as valid against a read-only directory and the answer is just as useful.
+    scan_for_orphans "${src_dir}" "${dest_dir}" "${shared_glob}"
     return 0
   fi
   while IFS= read -r src; do
     rel="${src#"${src_dir}/"}"
     install_file "${src}" "${dest_dir}/${rel}" "${mode}"
   done < <(find "${src_dir}" -type f ! -name '.DS_Store')
-  ok "${label} copied (mode ${mode})."
+
+  n_i=$(( installed - before_i ))
+  n_f=$(( failed - before_f ))
+  n_b=$(( backed_up - before_b ))
+  n_u=$(( unchanged - before_u ))
+  TREE_REPORT="${TREE_REPORT}${label}: ${n_i} installed, ${n_u} already current, ${n_b} backed up, ${n_f} FAILED -> ${dest_dir}
+"
+  # Only claim success when there was some. The old line said "[ok] hooks
+  # copied" on the strength of having reached the end of the loop.
+  #
+  # No fraction in the failure line. "2 of 2 failed" was the first thing this
+  # printed, and it was false in the way that matters: the denominator counted
+  # only the files this run touched, not the tree - the other 14 were identical
+  # and skipped. A wrong ratio is worse than no ratio, so the count stands on
+  # its own and the per-tree line below carries the breakdown.
+  if [ "${n_f}" -eq 0 ]; then
+    ok "${label} copied (mode ${mode})."
+  else
+    warn "${label}: ${n_f} file(s) could not be installed (${n_i} installed, ${n_u} already current)."
+  fi
+  scan_for_orphans "${src_dir}" "${dest_dir}" "${shared_glob}"
 }
 
+TT_SCAN_DIR="$(mktemp -d "${TMPDIR:-/tmp}/thinktank-install.XXXXXX")"
+
+# The fifth argument names the kit's namespace in a directory it shares with
+# the user. skills/ needs none: every file the kit puts there lives in a
+# subdirectory the kit itself owns.
 copy_tree "${REPO_ROOT}/skills" "${CLAUDE_HOME}/skills" "skills" 0644
-copy_tree "${REPO_ROOT}/agents" "${CLAUDE_HOME}/agents" "agents" 0644
+copy_tree "${REPO_ROOT}/agents" "${CLAUDE_HOME}/agents" "agents" 0644 'thinktank-*'
 # Hooks are executed by the harness and gate irreversible actions. Owner-only:
 # executable for the user who runs Claude Code, invisible to everyone else.
-copy_tree "${REPO_ROOT}/hooks"  "${CLAUDE_HOME}/hooks"  "hooks"  0700
+copy_tree "${REPO_ROOT}/hooks"  "${CLAUDE_HOME}/hooks"  "hooks"  0700 'tt-loop-*'
 
-log "${installed} file(s) installed, ${backed_up} existing file(s) backed up with the suffix .bak.${STAMP}"
+log "${installed} file(s) installed, ${unchanged} already current, ${backed_up} existing file(s) backed up with the suffix .bak.${STAMP}"
+
+# A skipped tree belongs in the closing inventory, not only in the warning that
+# scrolled past ten seconds ago. "0 installed" for a tree nobody walked and "0
+# installed" for a tree that was already correct are different facts, and this
+# is where they get told apart.
+if [ -n "${PREFLIGHT_SKIPPED_TREES}" ]; then
+  printf '%s' "${PREFLIGHT_SKIPPED_TREES}" | while IFS= read -r t; do
+    [ -n "${t}" ] && log "${t}: SKIPPED - ${CLAUDE_HOME}/${t} is read-only; step 1 compared every file and found them all identical, so nothing had to be written."
+  done
+  log "Nothing in a skipped tree was touched. If you later change one of those"
+  log "files in the repository, unlock the directory, re-run ./install.sh, and"
+  log "lock it again - step 1 will then say which file differs."
+fi
+
+if [ -n "${ORPHAN_LIST}" ]; then
+  printf '\n'
+  warn "These files are left over from a previous install. This kit no longer"
+  warn "ships them, and they were not created by this script:"
+  printf '%s' "${ORPHAN_LIST}" | while IFS= read -r f; do
+    [ -n "${f}" ] && printf '           %s\n' "${f}"
+  done
+  warn ""
+  warn "Nothing was deleted. These sit in your own ~/.claude, so the call is"
+  warn "yours - check the list, then remove them if you agree:"
+  printf '\n'
+  printf '  rm -f'
+  printf '%s' "${ORPHAN_LIST}" | while IFS= read -r f; do
+    [ -n "${f}" ] && printf " \\\\\n    '%s'" "$(printf '%s' "${f}" | sed "s/'/'\\\\''/g")"
+  done
+  printf '\n\n'
+fi
+
+# --- did step 6 finish? ----------------------------------------------------
+#
+# The point of this block is that a partial install is stated, not left to be
+# inferred. Whatever went wrong, the user gets the same three facts: what is on
+# disk now, what is not, and which of the remaining steps therefore did not run.
+# The failure this replaces produced none of them.
+if [ "${failed}" -gt 0 ]; then
+  printf '\n'
+  warn "Step 6 did not complete. What is on disk now:"
+  printf '\n'
+  printf '%s' "${TREE_REPORT}" | while IFS= read -r line; do
+    [ -n "${line}" ] && printf '           %s\n' "${line}"
+  done
+  printf '\n'
+  warn "The file(s) that could not be installed, with the reason:"
+  printf '\n'
+  printf '%s' "${FAILED_LIST}" | while IFS= read -r line; do
+    [ -n "${line}" ] && printf '           %s\n' "${line}"
+  done
+  printf '\n'
+  fail "Stopping here, with ${failed} file(s) missing. Steps 7, 8 and 9 did NOT run:
+         the MCP server is not registered, the settings.json hook block was not
+         printed, and the collection was not smoke-tested.
+
+         This is a PARTIAL installation. It is not a broken one - re-running
+         ./install.sh after fixing the cause above installs only what is missing
+         and leaves the rest alone. Until then, treat loop mode as unavailable:
+         a hook that was not replaced is the old version, and a hook file that
+         is missing gates nothing at all while looking like it does.
+
+         If a permission is the cause, the three commands from step 1 apply here
+         too - unlock the directory, re-run this script, lock it again."
+fi
+
 
 # ===========================================================================
 # 7. Register the MCP server
@@ -579,14 +1194,21 @@ step "9/9  Smoke test"
 # searches for it, and deletes it again. Only a full round trip proves the
 # collection is usable by mcp-server-qdrant.
 
+# -K "${CURL_AUTH_FILE}" carries the api-key header. -H stays for
+# Content-Type, which is not a secret, and the two compose: a header from the
+# config file and a header from the command line are both sent.
+#
+# -sS is right here and wrong in step 4's poll. These are single calls whose
+# status is inspected immediately, so one curl error line is information, not
+# noise.
 smoke_call() {
   local method="$1" path="$2" body="${3:-}"
   if [ -n "${body}" ]; then
-    curl -sS -X "${method}" -H "api-key: ${QDRANT_API_KEY}" \
+    curl -sS -X "${method}" -K "${CURL_AUTH_FILE}" \
       -H "Content-Type: application/json" -w '\n%{http_code}' --max-time 30 \
       -d "${body}" "${QDRANT_URL}${path}"
   else
-    curl -sS -X "${method}" -H "api-key: ${QDRANT_API_KEY}" \
+    curl -sS -X "${method}" -K "${CURL_AUTH_FILE}" \
       -w '\n%{http_code}' --max-time 30 "${QDRANT_URL}${path}"
   fi
 }

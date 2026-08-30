@@ -172,13 +172,31 @@ command -v curl >/dev/null 2>&1 || fail "curl is required but not installed."
 HAVE_JQ=0
 command -v jq >/dev/null 2>&1 && HAVE_JQ=1
 
+# --- the API key must not reach curl's argv --------------------------------
+# `-H "api-key: ${QDRANT_API_KEY}"` shows the key to every local process in
+# `ps` for as long as the call runs. The header goes into a mode-0600 curl
+# config file instead, and the trap removes it on every exit path. See
+# scripts/lib/curl-auth.sh.
+CURL_AUTH_LIB="${SCRIPT_DIR}/lib/curl-auth.sh"
+[ -f "${CURL_AUTH_LIB}" ] || fail "scripts/lib/curl-auth.sh is missing. The repository looks incomplete."
+# shellcheck source=lib/curl-auth.sh
+. "${CURL_AUTH_LIB}"
+
+trap curl_auth_file_remove EXIT INT TERM
+curl_auth_file_create "${QDRANT_API_KEY}" \
+  || fail "Could not create a temporary curl configuration file in ${TMPDIR:-/tmp}. The API key is passed to curl through that file so it never appears in the process list."
+
 # --- helper: one REST call, returns body + status --------------------------
 # Prints the response body on stdout and the HTTP status as the last line.
+#
+# -sS is deliberate here: every call is a single shot whose status is inspected
+# on the next line, so one curl error message is information. install.sh's
+# readiness poll uses plain -s for the opposite reason - it loops.
 qdrant_call() {
   local method="$1" path="$2" body="${3:-}"
   if [ -n "${body}" ]; then
     curl -sS -X "${method}" \
-      -H "api-key: ${QDRANT_API_KEY}" \
+      -K "${CURL_AUTH_FILE}" \
       -H "Content-Type: application/json" \
       -w '\n%{http_code}' \
       --max-time 30 \
@@ -186,7 +204,7 @@ qdrant_call() {
       "${QDRANT_URL}${path}"
   else
     curl -sS -X "${method}" \
-      -H "api-key: ${QDRANT_API_KEY}" \
+      -K "${CURL_AUTH_FILE}" \
       -w '\n%{http_code}' \
       --max-time 30 \
       "${QDRANT_URL}${path}"

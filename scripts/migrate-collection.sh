@@ -63,10 +63,16 @@ Example:
   ./scripts/migrate-collection.sh my-old-memory
 
 To see which collections exist on your instance:
-  curl -s -H "api-key: $QDRANT_API_KEY" "$QDRANT_URL/collections" | jq -r '.result.collections[].name'
+  curl -s -H @<(printf 'api-key: %s\n' "$QDRANT_API_KEY") "$QDRANT_URL/collections" \
+    | jq -r '.result.collections[].name'
 
   (QDRANT_URL and QDRANT_API_KEY are in .env; without jq, read the JSON as it
-  comes.)
+  comes. The header is fed through a process substitution - curl 7.55+ reads a
+  header from a file with -H @file - rather than written out as
+  -H "api-key: $QDRANT_API_KEY", because the second form puts the key into
+  curl's argv, where `ps` shows it to every local process while the call runs,
+  and into your shell history afterwards. Same reason the scripts here pass it
+  through a mode-0600 curl config file; see scripts/lib/curl-auth.sh.)
 USAGE
 }
 
@@ -119,19 +125,37 @@ command -v jq   >/dev/null 2>&1 || fail "jq is required for this script (it rewr
 
 [ "${SOURCE_COLLECTION}" != "${TARGET_COLLECTION}" ] || fail "Source and target are the same collection ('${SOURCE_COLLECTION}'). Nothing to do."
 
+# --- the API key must not reach curl's argv --------------------------------
+# `-H "api-key: ${QDRANT_API_KEY}"` shows the key to every local process in
+# `ps` for as long as the call runs, and a migration makes many long calls. The
+# header goes into a mode-0600 curl config file instead, removed by the trap on
+# every exit path. See scripts/lib/curl-auth.sh.
+CURL_AUTH_LIB="${SCRIPT_DIR}/lib/curl-auth.sh"
+[ -f "${CURL_AUTH_LIB}" ] || fail "scripts/lib/curl-auth.sh is missing. The repository looks incomplete."
+# shellcheck source=lib/curl-auth.sh
+. "${CURL_AUTH_LIB}"
+
+trap curl_auth_file_remove EXIT INT TERM
+curl_auth_file_create "${QDRANT_API_KEY}" \
+  || fail "Could not create a temporary curl configuration file in ${TMPDIR:-/tmp}. The API key is passed to curl through that file so it never appears in the process list."
+
 # --- REST helpers ----------------------------------------------------------
 # Body on stdout, HTTP status as the final line.
+#
+# -sS is deliberate: these are single calls whose status is checked immediately,
+# so one curl error line helps. install.sh's readiness poll uses plain -s
+# because it loops and -S would bury the real message.
 qdrant_call() {
   local method="$1" path="$2" body="${3:-}"
   if [ -n "${body}" ]; then
     curl -sS -X "${method}" \
-      -H "api-key: ${QDRANT_API_KEY}" \
+      -K "${CURL_AUTH_FILE}" \
       -H "Content-Type: application/json" \
       -w '\n%{http_code}' --max-time 120 \
       -d "${body}" "${QDRANT_URL}${path}"
   else
     curl -sS -X "${method}" \
-      -H "api-key: ${QDRANT_API_KEY}" \
+      -K "${CURL_AUTH_FILE}" \
       -w '\n%{http_code}' --max-time 120 \
       "${QDRANT_URL}${path}"
   fi
