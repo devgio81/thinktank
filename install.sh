@@ -1044,6 +1044,13 @@ step "7/9  MCP server registration"
 MCP_NAME="qdrant-thinktank"
 LAUNCHER="${REPO_ROOT}/scripts/qdrant-mcp-launcher.sh"
 
+# Raised when a registration exists under the right name but does not point at
+# this clone. Step 7 says so where it finds it, and the closing summary says it
+# again, because steps 8 and 9 print enough output afterwards to scroll a single
+# warning off the screen - and this particular warning is the one that decides
+# whether the memory backend works at all.
+MCP_REGISTRATION_STALE=0
+
 [ -f "${LAUNCHER}" ] || fail "scripts/qdrant-mcp-launcher.sh is missing. The repository looks incomplete."
 [ -x "${LAUNCHER}" ] || chmod +x "${LAUNCHER}"
 
@@ -1098,10 +1105,56 @@ if command -v claude >/dev/null 2>&1; then
     warn "Continuing as if the server were not registered."
     mcp_list_out=""
   fi
-  if printf '%s\n' "${mcp_list_out}" | grep -q "^${MCP_NAME}:"; then
-    ok "MCP server '${MCP_NAME}' is already registered - leaving it alone."
-    log "To re-register it with the current .env values:"
-    log "  claude mcp remove ${MCP_NAME} --scope user  &&  ./install.sh"
+  # `|| true` because grep exits 1 when it matches nothing, which is the
+  # ordinary "not registered yet" case, and `set -e` would end the install here.
+  mcp_line="$(printf '%s\n' "${mcp_list_out}" | grep "^${MCP_NAME}:" | head -n 1 || true)"
+  if [ -n "${mcp_line}" ]; then
+    # A registration under the right name is not the same as a working one.
+    # Before this check the installer stopped at the name and reported success,
+    # so a registration left behind by a clone that has since been moved,
+    # renamed or deleted survived every later reinstall while the installer kept
+    # calling it fine. Nothing downstream corrects that: Claude Code drops a
+    # server whose command will not start, and the memory tools are then simply
+    # absent from the session, with the error in a place the user is not
+    # looking. An installer that cannot be re-run to fix a broken install is
+    # only half an installer.
+    #
+    # The test is `grep -F` for this clone's launcher rather than a parse of the
+    # line. The CLI prints "<name>: <command> - <status>", and a clone directory
+    # may legally contain both spaces and " - ", so every way of splitting that
+    # line is a guess. Asking whether this launcher appears in it is not.
+    if printf '%s\n' "${mcp_line}" | grep -qF -- "${LAUNCHER}"; then
+      ok "MCP server '${MCP_NAME}' is already registered against this clone."
+      log "To re-register it with the current .env values:"
+      log "  claude mcp remove ${MCP_NAME} --scope user  &&  ./install.sh"
+    else
+      MCP_REGISTRATION_STALE=1
+      warn "MCP server '${MCP_NAME}' is registered, but not against this clone."
+      log "Registered:"
+      printf '%s\n' "${mcp_line}" | sed 's/^/      /'
+      log "This clone:"
+      log "      ${LAUNCHER}"
+      log ""
+
+      # Best effort, and only ever used to sharpen the message: if the
+      # registered command is an absolute path that is simply gone, say so
+      # outright rather than leaving two long paths to be compared by eye. When
+      # the parse yields nothing usable the generic wording below still stands.
+      mcp_cmd="${mcp_line#"${MCP_NAME}":}"
+      mcp_cmd="${mcp_cmd% - *}"
+      mcp_bin="$(printf '%s' "${mcp_cmd}" | awk '{print $1}')"
+      if [ -n "${mcp_bin}" ] && [ "${mcp_bin#/}" != "${mcp_bin}" ] && [ ! -e "${mcp_bin}" ]; then
+        warn "That path does not exist, so the registration is dead. The memory"
+        warn "tools will be missing from your session without an error message."
+      else
+        log "If another clone of ThinkTank owns that registration, this is"
+        log "expected and you can leave it as it is."
+      fi
+      log ""
+      log "To point it at this clone instead:"
+      log "  claude mcp remove ${MCP_NAME} --scope user"
+      log "  ./install.sh"
+    fi
   else
     if claude mcp add "${MCP_NAME}" \
         --scope user \
@@ -1356,6 +1409,19 @@ fi
 
 # ===========================================================================
 printf '\n\033[1m== Done ==\033[0m\n'
+
+# Repeated from step 7 on purpose. A smoke test that passes proves the backend
+# is reachable from this shell, and says nothing about whether Claude Code can
+# reach it - that depends on the registration, and a stale one fails silently.
+# Ending on "Done" while that is outstanding is how the earlier version of this
+# script told people their install was fine when it was not.
+if [ "${MCP_REGISTRATION_STALE:-0}" = "1" ]; then
+  warn "The MCP registration for '${MCP_NAME}' does not point at this clone."
+  warn "Until you repoint it, Claude Code starts without the memory tools and"
+  warn "says nothing about it. See step 7 above for the two commands."
+  printf '\n'
+fi
+
 log "1. Merge the hook block from step 8 into ${SETTINGS_FILE}."
 log "2. Restart Claude Code so it picks up the MCP server and the new skills."
 log "3. Try it: /thinktank <your task>"
