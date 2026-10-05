@@ -12,7 +12,7 @@ OS/admin and Docker first-run prompts remain human-controlled. On Linux, Docker 
 must be installed and running with access for the current user. Node, Homebrew and host-app login are
 not installed or modified silently.
 
-**Published on npm:** [@devgio81/thinktank 17.0.0](https://www.npmjs.com/package/@devgio81/thinktank).
+**npm package:** [@devgio81/thinktank 17.0.1](https://www.npmjs.com/package/@devgio81/thinktank).
 No repository clone, local build, global CLI installation or npm account is needed.
 All end-user CLI examples below run the public package directly through `npx`.
 
@@ -43,7 +43,7 @@ npx --yes @devgio81/thinktank
 A single installed application is detected automatically. If the target is ambiguous, the assistant
 asks you to choose; it then shows the plan for confirmation. In a non-interactive terminal, supply
 `--platform hermes` or `--platform claude` if detection is ambiguous and `--yes` to approve installation.
-For a version-pinned setup, replace `@devgio81/thinktank` with `@devgio81/thinktank@17.0.0` in any command.
+For a version-pinned setup, replace `@devgio81/thinktank` with `@devgio81/thinktank@17.0.1` in any command.
 Reinstallation uses the same one-command entry point.
 
 Both platforms can share the default `~/.thinktank` memory instance. Each receives its own skill and hook registration.

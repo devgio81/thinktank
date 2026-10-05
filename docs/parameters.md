@@ -4,6 +4,9 @@
 
 [Back to the overview](../README.md) · [Installation and recovery](install.md)
 
+**[Individual examples for every parameter and mode →](parameter-examples.md)**
+Use this companion when you want one setting per example rather than combined configurations.
+
 ## Choose the right interface
 
 | Interface | Where to use it | Purpose |

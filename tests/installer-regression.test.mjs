@@ -33,6 +33,16 @@ test('CLI executes when invoked through npm-style symlink and system alias', asy
   }
 });
 
+test('CLI version matches package and lockfile metadata', async () => {
+  const manifest = JSON.parse(await fs.readFile('package.json', 'utf8'));
+  const lock = JSON.parse(await fs.readFile('package-lock.json', 'utf8'));
+  const result = run([path.resolve('src/cli.mjs'), '--version']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), manifest.version);
+  assert.equal(lock.version, manifest.version);
+  assert.equal(lock.packages[''].version, manifest.version);
+});
+
 test('persisted runtime includes dependencies and supports install and doctor outside npm tree', async t => {
   const home = await temp(t);
   const stateDir = path.join(home, 'state');

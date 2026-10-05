@@ -27,7 +27,7 @@ try {
   const archive = path.join(root, 'archives', archives[0]);
   const prefix = ['--yes', '--package', archive, 'thinktank'];
   assert.match(run('npx', [...prefix, '--help']), /ThinkTank V17/);
-  assert.match(run('npx', [...prefix, '--version']), /17\.0\.0/);
+  assert.equal(run('npx', [...prefix, '--version']).trim(), '17.0.1');
   console.log('PASS packed npm bin via real npx: help and version');
   for (const platform of ['hermes', 'claude']) {
     const args = [...prefix, 'install', '--platform', platform, '--home', home, '--yes'];
