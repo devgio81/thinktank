@@ -5,33 +5,52 @@ Built by [Martin Tomczak](https://tomczak.dev).
 
 ## Install
 
-**One command. No clone, build, global install or manual configuration.**
-After the owner publishes the npm release:
+**Available on npm: [@devgio81/thinktank 17.0.0](https://www.npmjs.com/package/@devgio81/thinktank).**
+One command. No clone, build, global install, manual configuration or npm account required.
+
+### Hermes One
 
 ```bash
 npx --yes @devgio81/thinktank --platform hermes --yes
 ```
 
-Use `--platform claude` for Claude Code. Omit the platform to auto-detect a single
-installed application; if both are installed the interactive wizard asks which one.
-Omit the final `--yes` to review and confirm the plan interactively.
-
-**Publication status:** this development branch is not yet published to npm. The command
-above is the release entry point, not a claim of registry availability. The supplied
-`.tgz` already supports the same one-command installation without building anything:
+### Claude Code
 
 ```bash
-npx --yes --package ./devgio81-thinktank-17.0.0.tgz thinktank --platform hermes --yes
+npx --yes @devgio81/thinktank --platform claude --yes
 ```
 
-Node.js 20.19+ and the target application are prerequisites. Missing **uv is downloaded,
-checksum-verified and installed privately**. On macOS, existing Docker Desktop is started;
-missing Docker Desktop is installed through existing Homebrew. OS/admin/first-run permission
-prompts cannot be bypassed. Linux Docker service installation remains an administrator prerequisite.
-No model login, Homebrew installation or system privilege change is performed silently.
-The wizard installs skills and domain prompts, wires the appropriate hook and MCP registration,
-starts its own authenticated Qdrant through Docker Compose, initializes its named vector collection,
-and runs a write/read/query/delete smoke test. Restart the target app, then use:
+### Prefer an interactive assistant?
+
+```bash
+npx --yes @devgio81/thinktank
+```
+
+The assistant detects a single installed target, or asks which application to configure if the
+selection is ambiguous, then shows the plan for confirmation. The first `--yes` lets **npx** fetch
+the package; the final `--yes` in the automatic commands confirms **ThinkTank's installation plan**.
+Neither option overrides local-edit conflicts or operating-system permission prompts.
+
+### Requirements
+
+- **Node.js 20.19+** with npm/npx, and an installed **Hermes One or Claude Code**.
+- **macOS:** Docker Desktop; if missing, the installer can install it through existing Homebrew.
+  Existing Docker Desktop is started automatically. Complete any OS/admin/first-run prompts yourself.
+- **Linux (glibc, x64/arm64):** a running Docker Engine with Compose v2, accessible to your user.
+- Network access for the npm package, Docker image and initial local embedding-model downloads.
+
+Missing **uv is downloaded, checksum-verified and installed privately** on supported macOS/Linux
+x64/arm64 systems. No separate uv command or shell-profile edit is needed. The installer does not
+install Node.js, Homebrew or the host application, configure model credentials or bypass system permissions.
+
+### What gets installed
+
+Skills and domain prompts, the host-specific hook and MCP registration, a persistent runtime,
+and a private authenticated **Qdrant** instance managed through **Docker Compose**. The installer
+initializes its vector collection and runs a write/read/query/delete smoke test. Existing Qdrant
+instances and unrelated application settings are preserved.
+
+After installation, **restart the target application**, then use:
 
 ```text
 /thinktank review this project for correctness and security subagents=auto
@@ -88,6 +107,8 @@ npm run test:package
 ```
 
 The integration gate uses disposable profile directories and a dedicated Docker Compose project.
-It does not modify your installed Hermes or Claude configuration. Docker and uv/uvx are required.
+It does not modify your installed Hermes or Claude configuration. A usable Docker environment is
+required; the installer reuses uv/uvx or bootstraps it privately when missing. These development
+commands are not installation steps for end users.
 
 MIT — [LICENSE](LICENSE).
