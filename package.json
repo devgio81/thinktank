@@ -1,11 +1,11 @@
 {
   "name": "@devgio81/thinktank",
-  "version": "17.0.0",
+  "version": "17.0.1",
   "description": "Evidence-led engineering skills and installer for Hermes One and Claude Code",
   "type": "module",
   "bin": { "thinktank": "src/cli.mjs" },
   "engines": { "node": ">=20.19" },
-  "files": ["src/", "skills/", "agents/", "hooks/", "scripts/", "docs/install.md", "docs/audit-v17.md", "docs/parameters.md", "README.md", "LICENSE", "docker-compose.yml", "install.sh", ".env.example"],
+  "files": ["src/", "skills/", "agents/", "hooks/", "scripts/", "docs/install.md", "docs/audit-v17.md", "docs/parameters.md", "docs/parameter-examples.md", "README.md", "LICENSE", "docker-compose.yml", "install.sh", ".env.example"],
   "scripts": {
     "test": "node --test tests/*.test.mjs",
     "build": "node scripts/build.mjs",

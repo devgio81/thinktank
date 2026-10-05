@@ -76,7 +76,7 @@ export function parseArgs(argv) {
 export async function main(argv = process.argv.slice(2)) {
   const options = parseArgs(argv);
   if (options.help) { console.log(help); return; }
-  if (options.version) { console.log('17.0.0'); return; }
+  if (options.version) { console.log('17.0.1'); return; }
   if (options.command === 'mcp') {
     const { launchMcp, loadQdrantConfig } = await import('./qdrant/index.mjs');
     const config = await loadQdrantConfig(options.stateDir);

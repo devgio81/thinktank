@@ -37,7 +37,7 @@ export async function probeMcp(command, args, { timeoutMs = 240000 } = {}) {
     });
   }
   try {
-    const initialized = await request('initialize', { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'thinktank-integration', version: '17.0.0' } });
+    const initialized = await request('initialize', { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'thinktank-integration', version: '17.0.1' } });
     if (!initialized?.serverInfo) throw new Error('MCP initialize omitted serverInfo.');
     child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
     const listed = await request('tools/list', {});

@@ -44,6 +44,8 @@ A simple lookup or tiny edit normally stays in one context. V17 does not start a
 ## Install
 
 **Available on npm: [@devgio81/thinktank 17.0.0](https://www.npmjs.com/package/@devgio81/thinktank).**
+The source/package version in this checkout is **17.0.1**. A GitHub tag or release does not publish
+that version to npm; the npm commands below continue to use the published registry version.
 One command. No clone, build, global install, manual configuration or npm account required.
 
 ### Hermes One
@@ -353,6 +355,9 @@ host skill, not npm CLI flags. Select only what the task needs.
 
 **[Complete English parameter guide with examples →](docs/parameters.md)**
 Explains every main parameter, the advanced `deploy` proposal, brainstorming/loop options and all CLI flags.
+
+**[One parameter at a time: individual examples for every option and mode →](docs/parameter-examples.md)**
+Each example isolates one setting and explains its expected effect; required companion arguments are labeled.
 
 | Parameter | Default | What it controls |
 |---|---|---|
