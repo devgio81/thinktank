@@ -4,7 +4,10 @@ Between planning and coding sits one agent whose only output is a **brief**: the
 
 The reason it exists: a plan is written once, at the start, when the code is in one state. The coder for package 7 works in a different state, several merges later. Handing that coder the original plan text causes the loop to drift, because it implements against a repository that no longer exists. The prompt-writer re-reads the repo for each package and turns the relevant slice of the plan into instructions that fit the current state.
 
-Agent definition: `~/.claude/agents/thinktank-prompt-writer.md`.
+Product definition: `agents/thinktank-prompt-writer.md`; installed paths are host-specific.
+This legacy **writing package briefer is not the read-only V17 Prompter**. Domain decomposition
+uses `thinktank-prompter` and `subagent-prompt-orchestration.md`; parent owns validation/dispatch.
+Resolve the active host first (`hermes-adapter.md` on Hermes), never assume a Claude profile.
 
 ## 1. Role and boundary
 

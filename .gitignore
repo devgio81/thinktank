@@ -9,3 +9,9 @@ _draft/
 .DS_Store
 qdrant_storage/
 node_modules/
+.worktrees/
+.claude-flow/
+*.tgz
+.thinktank/
+docs/.v17-*-prompt.txt
+docs/v17-worker-contracts.json

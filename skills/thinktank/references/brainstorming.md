@@ -2,9 +2,11 @@
 
 The engine gains an additional lane: **structured brainstorming for complex projects**,
 supported by autonomous web research and a human-gated question loop. This lane does not
-change the engine contract. It uses the existing contract: parallel fan-outs are the
-straightforward "genuinely parallel" case in the Decision Matrix, the four exits bound the
-loop, and the write path stores the result. Entry point: `/tt-brainstorm <topic>`, or the
+change the engine contract. V17's read-only Prompter compiles lens contracts first, parent
+validates then dispatches through real host tools, and the four exits bound the loop.
+`subagents=auto|on|off` is independent of `graph=auto|on|off`; the Decision Matrix applies
+only to `graph=auto`. `graph=on` is user-forced, not permission to spend or force concurrency.
+`subagents=off` keeps research in the parent. The write path stores only authorized results. Entry point: `/tt-brainstorm <topic>`, or the
 standalone `thinktank-brainstormer` agent.
 
 ## Role separation (not negotiable)

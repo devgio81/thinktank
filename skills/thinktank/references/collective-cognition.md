@@ -7,7 +7,10 @@ This contract defines **when and how the single cognitive cycle becomes a team, 
 ## 0. Preconditions (embodied handoffs — state them before proposing a team)
 
 - **Flag:** Agent Teams are experimental and off by default. They require `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` in `settings.json` (`env`) or the environment. If unset → **do not** propose or spawn teammates; the escalation gate resolves to solo/subagents and the engine runs exactly as it does in single-context mode. Name the flag as the handoff.
-- **Roster:** the operator's own agent definitions (§3). The kit ships five `thinktank-*` lane agents and no review-lens roster, so a team proposal that names roles nobody has written is a second handoff, not a plan.
+- **Roster:** V17 ships the legacy lane agents plus `thinktank-prompter`, `thinktank-checker`
+  and six concrete domain definitions: backend, frontend, data, infrastructure, security, QA.
+  Verify actual native registration before naming a Claude teammate. On Hermes these are
+  `references/domains/` prompt data, not an agent registry or Agent Teams implementation.
 - **Split panes (optional):** in-process mode works in any terminal; split panes need tmux or iTerm2 + `it2`. Never a blocker — in-process is the default.
 - **You stay in control:** Claude spawns teammates only on your request or with your confirmation of its proposal.
 
@@ -41,7 +44,14 @@ Decide **solo → subagents → team**. Escalate to a team only when ALL hold; o
 
 Spawn teammates **from existing subagent definitions** (project/user/plugin/CLI scope) by name — a role defined once, reused as delegate or teammate. The definition's `tools` allowlist + `model` are honored and its body is appended to the teammate's system prompt; `SendMessage` + task tools are always available. Note: a subagent def's `skills`/`mcpServers` frontmatter is **not** applied to a teammate — it loads skills/MCP from project+user settings like a normal session, so put load-bearing context in the **spawn prompt** (teammates don't inherit lead history; they do read `CLAUDE.md`).
 
-**Team mode requires agent definitions you supply. The kit does not ship a roster.** ThinkTank installs exactly five agents, and they are lane agents, not review lenses: `thinktank-retrieval-orchestrator`, `thinktank-memory-steward`, `thinktank-knowledge-acquisition`, `thinktank-prompt-writer`, `thinktank-brainstormer`. A useful team roster — a security-and-privacy reviewer, backend/data/frontend specialists, a QA-and-verification lens, a devops-and-release lens, and a dedicated **devil's advocate** for debugging and architecture — describes the *shape* of a roster worth having, not files that exist after `install.sh`. Write those definitions in `~/.claude/agents/` (or the project's `.claude/agents/`) before proposing a team, and name the ones you actually have.
+**V17 ships concrete domain definitions**, not a mandate to launch all of them:
+`thinktank-backend` (API errors/idempotency), `thinktank-frontend` (states/keyboard/accessibility),
+`thinktank-data` (schema/integrity/migration), `thinktank-infrastructure` (isolation/lifecycle/recovery),
+`thinktank-security` (trust/abuse), `thinktank-qa` (negative controls/evidence).
+`thinktank-prompter` compiles contracts read-only before workers; `thinktank-checker` is separate.
+The legacy `thinktank-prompt-writer` writes package briefs and is not the V17 Prompter.
+Names must be installed and tool support verified before any Claude team proposal; Hermes uses
+native leaf delegation via the adapter instead. Definitions grant no tool or autonomy rights.
 
 Spawning a name that has no definition is a failure to report, not a gap to improvise around: give each teammate a distinct lens and a disjoint file scope so they neither overlap nor collide.
 

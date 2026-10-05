@@ -2,7 +2,8 @@
 
 The contract: **the loop stops being the only executable shape and becomes one member of a
 small, gated family. It remains a graph drawn as a line, while the engine may draw that line
-as a directed topology when, and only when, a task proves it needs one.** Everything not
+as a directed topology when `graph=on` explicitly requests it, or when `graph=auto`
+earns it through the Decision Matrix.** Everything not
 redefined here comes from the delivery loop, the work-package engine, and loop-engineering
 discipline. The engine already implements the governance half of "Graph Engineering":
 timescale separation, exogenous anchors, operational safety limits, context isolation, and a
@@ -176,9 +177,9 @@ no counter-metric.
   makes **cost-per-successful-completion** (§7) measurable per node. Debugging becomes
   observability work, not "vibes".
 - **Honest limits (stated, not assumed away).** This is **observability only** — it is
-  explicitly **not** an enforcement gateway. The guard remains a **string matcher**, and
-  **MCP tools bypass it**; there is a real node-level *attribution* gap wherever a tool routes
-  around the guard, and this reference states it rather than pretending the sidecar closes it.
+  explicitly **not** an enforcement gateway. Inspect the installed host adapter's actual
+  interception coverage. Unknown effectful surfaces must be denied in unattended mode; if
+  coverage cannot be verified, do not launch. Telemetry cannot close an enforcement gap.
   It records **metadata, never judgment content** — the checker's §2b isolation holds. Per-node
   numbers sit **under** the four stacked exits as attribution, **never** a fifth exit. Acting
   on the attribution (cheaper-model routing, caching) is a **hill-climbing proposal** that
@@ -190,8 +191,14 @@ no counter-metric.
 
 ### 7a. The Graph-vs-Loop Decision Matrix (the entry gate)
 
-The **default answer is NO GRAPH**; the burden of proof is on graphing. Three tests, all
-required:
+This Decision Matrix applies **only to `graph=auto`**, never to explicit `graph=on`.
+`graph=on` is user-forced topology even for a single path; it grants neither parallelism nor
+additional tools, spend or authority. `graph=off` remains sequential. `subagents=auto|on|off`
+is independent: who reasons is not the execution topology.
+
+For automatic promotion the **default answer is NO GRAPH**; require observed structure and a
+measured cost/retry baseline. The secondary percentages below are historical illustration,
+not universal thresholds or a proof that this product is cheaper. Three diagnostic questions:
 
 1. **Shape.** Is the work **multi-hop / relational**, or does it have **genuinely independent
    units** to parallelize? Graphs win multi-hop (GraphRAG-Bench 53.4% vs 42.9%, directional);
@@ -208,7 +215,9 @@ question complexity"; it never loosens a human-gate.
 
 ### 7b. The 5-stage graph adoption method
 
-**Audit → Identify → Design → Implement → Type.**
+**Audit → Identify → Design → Implement → Type.** This promotion method applies to `graph=auto`;
+for `graph=on`, record the user-forced topology and unknown baseline without denying that choice.
+It never forces concurrent agents or loosens the safety gates.
 
 1. **Audit** — baseline the sequential loop: steps, retry rate, latency, token cost. **No
    measured baseline → the graph is rejected** (the anti-hype posture, mechanical).
