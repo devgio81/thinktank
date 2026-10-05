@@ -43,9 +43,8 @@ A simple lookup or tiny edit normally stays in one context. V17 does not start a
 
 ## Install
 
-**Available on npm: [@devgio81/thinktank 17.0.0](https://www.npmjs.com/package/@devgio81/thinktank).**
-The source/package version in this checkout is **17.0.1**. A GitHub tag or release does not publish
-that version to npm; the npm commands below continue to use the published registry version.
+**npm package: [@devgio81/thinktank 17.0.1](https://www.npmjs.com/package/@devgio81/thinktank).**
+For a version-pinned installation, use `@devgio81/thinktank@17.0.1` in the commands below.
 One command. No clone, build, global install, manual configuration or npm account required.
 
 ### Hermes One
