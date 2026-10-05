@@ -351,6 +351,9 @@ local-only tasks do not need to pretend they shipped anything.
 The installed public command is **`/thinktank`** for V17. These parameters are instructions to the
 host skill, not npm CLI flags. Select only what the task needs.
 
+**[Complete English parameter guide with examples →](docs/parameters.md)**
+Explains every main parameter, the advanced `deploy` proposal, brainstorming/loop options and all CLI flags.
+
 | Parameter | Default | What it controls |
 |---|---|---|
 | `subagents=auto\|on\|off` | `auto` | Who reasons: useful domain delegation, required Prompter-first delegation, or no workers |

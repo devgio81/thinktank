@@ -5,7 +5,7 @@
   "type": "module",
   "bin": { "thinktank": "src/cli.mjs" },
   "engines": { "node": ">=20.19" },
-  "files": ["src/", "skills/", "agents/", "hooks/", "scripts/", "docs/install.md", "docs/audit-v17.md", "README.md", "LICENSE", "docker-compose.yml", "install.sh", ".env.example"],
+  "files": ["src/", "skills/", "agents/", "hooks/", "scripts/", "docs/install.md", "docs/audit-v17.md", "docs/parameters.md", "README.md", "LICENSE", "docker-compose.yml", "install.sh", ".env.example"],
   "scripts": {
     "test": "node --test tests/*.test.mjs",
     "build": "node scripts/build.mjs",
