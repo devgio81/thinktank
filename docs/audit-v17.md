@@ -50,7 +50,10 @@ The installer detects an unambiguous host application and supports explicit `--p
 GitHub release assets, verifies a pinned SHA-256, and installs it under the private state directory.
 No downloaded shell script is executed. Existing macOS Docker Desktop is started; a missing Docker
 Desktop can be installed through existing Homebrew. OS prompts and Linux Docker prerequisites remain
-explicit human boundaries. The public npm command becomes available only after an authorized publish.
+explicit human boundaries. Version `17.0.0` is published publicly as
+[@devgio81/thinktank](https://www.npmjs.com/package/@devgio81/thinktank). A fresh, unauthenticated
+`npx` invocation verified version/help and an isolated dry-run; the downloaded registry tarball
+matched the reviewed artifact's SHA-256.
 
 The macOS package gate was also run with global uv removed from PATH and
 `THINKTANK_TEST_PRIVATE_UV=1`; it asserted the private uv executable exists, installed both hosts,
@@ -70,7 +73,7 @@ removed npm cache/tarball and completed a real embedding store/find roundtrip.
   prohibited-use feature, person scoring or legal certification is introduced by this distribution.
 - Unit and REST-smoke evidence alone do not establish embedding/MCP operation. The integration gate
   includes a real stdio initialize/tools-list/store/find round trip.
-- npm publication, remote CI, merge and release are outside this implementation authorization.
+- Publication, merge and deployment are separate authorization boundaries, never implicit effects of installation.
 
 ## Reproduce verification
 

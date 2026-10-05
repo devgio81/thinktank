@@ -12,26 +12,39 @@ OS/admin and Docker first-run prompts remain human-controlled. On Linux, Docker 
 must be installed and running with access for the current user. Node, Homebrew and host-app login are
 not installed or modified silently.
 
-The package name is `@devgio81/thinktank`. This source branch does not imply a published npm release.
-Use the local package workflow in [README](../README.md) until publication is authorized.
-Examples below use the `thinktank` binary supplied by that package; from a checkout use `node src/cli.mjs`.
+**Published on npm:** [@devgio81/thinktank 17.0.0](https://www.npmjs.com/package/@devgio81/thinktank).
+No repository clone, local build, global CLI installation or npm account is needed.
+All end-user CLI examples below run the public package directly through `npx`.
 
-## Wizard
+## One-command installation
+
+**Hermes One:**
 
 ```bash
 npx --yes @devgio81/thinktank --platform hermes --yes
 ```
 
-Use `--platform claude` for Claude Code. The final `--yes` confirms the displayed setup plan
-and makes installation non-interactive. Without it, the wizard requests confirmation.
-After installation, restart the target application and invoke `/thinktank`.
-
-For a repeatable installation:
+**Claude Code:**
 
 ```bash
-thinktank install --platform hermes --yes
-thinktank install --platform claude --yes
+npx --yes @devgio81/thinktank --platform claude --yes
 ```
+
+The first `--yes` approves downloading the package through **npx**. The final `--yes`
+approves **ThinkTank's installation plan**, without overriding conflicts or OS permissions.
+After installation, restart the target application and invoke `/thinktank`.
+
+**Interactive assistant:**
+
+```bash
+npx --yes @devgio81/thinktank
+```
+
+A single installed application is detected automatically. If the target is ambiguous, the assistant
+asks you to choose; it then shows the plan for confirmation. In a non-interactive terminal, supply
+`--platform hermes` or `--platform claude` if detection is ambiguous and `--yes` to approve installation.
+For a version-pinned setup, replace `@devgio81/thinktank` with `@devgio81/thinktank@17.0.0` in any command.
+Reinstallation uses the same one-command entry point.
 
 Both platforms can share the default `~/.thinktank` memory instance. Each receives its own skill and hook registration.
 The wizard never adopts a pre-existing Qdrant instance or migrates an old collection implicitly.
@@ -39,17 +52,18 @@ The wizard never adopts a pre-existing Qdrant instance or migrates an old collec
 ## Preview or isolate
 
 ```bash
-thinktank install --platform hermes --dry-run
-thinktank install --platform claude --home /absolute/path/to/test-home --dry-run
-thinktank install --platform hermes --port 7333 --collection thinktank-memory --yes
+npx --yes @devgio81/thinktank install --platform hermes --dry-run
+npx --yes @devgio81/thinktank install --platform claude --home /absolute/path/to/test-home --dry-run
+npx --yes @devgio81/thinktank install --platform hermes --port 7333 --collection thinktank-memory --yes
 ```
 
 `--home` selects **all** profile paths, including Claude's `.claude.json`. The default state directory
 is `<home>/.thinktank`; `--state-dir` overrides it. This is not a switch to an existing named Hermes
 profile. Only point it at a profile/layout you intentionally manage.
 
-`--dry-run` does not create files, start containers or contact the network. Omitted ports are chosen
-automatically at installation time. An explicitly occupied port produces an error, not a takeover.
+ThinkTank's `--dry-run` does not write profile/state files, start containers or provision services.
+`npx` may still download the package and populate its own cache before running the preview.
+Omitted ports are chosen automatically at installation time. An explicitly occupied port produces an error, not a takeover.
 Use `--timeout 240` for a slower Docker startup (valid range: 10–600 seconds).
 
 ## Files and configuration
@@ -77,7 +91,7 @@ modified managed files. It never silently resets approvals or globally enables h
 Rerunning the same install is idempotent. To deliberately replace conflicting managed files:
 
 ```bash
-thinktank install --platform hermes --replace --yes
+npx --yes @devgio81/thinktank install --platform hermes --replace --yes
 ```
 
 Read the preview first. Previous file contents are backed up before replacement. Profile writes are
@@ -88,8 +102,8 @@ An `install.lock` prevents competing installers. If a process was terminated, in
 before removing a stale `<state-dir>/install.lock`; do not remove a lock held by an active installer.
 
 ```bash
-thinktank doctor --platform hermes
-thinktank doctor --platform claude
+npx --yes @devgio81/thinktank doctor --platform hermes
+npx --yes @devgio81/thinktank doctor --platform claude
 ```
 
 Doctor verifies installed files, effective managed configuration and Qdrant availability/schema.
@@ -109,7 +123,7 @@ It does not prove that an already-running app has reloaded those settings or tha
 ## Validate a generated plan
 
 ```bash
-thinktank validate-plan --plan /absolute/path/plan.json --write-root 'src/**' --write-root 'tests/**' --max-workers 3
+npx --yes @devgio81/thinktank validate-plan --plan /absolute/path/plan.json --write-root 'src/**' --write-root 'tests/**' --max-workers 3
 ```
 
 Write access defaults to **none**. The parent supplies allowed roots explicitly; a plan cannot grant
@@ -118,8 +132,9 @@ calculation do not execute models or acceptance commands.
 
 ## Data retention
 
-`docker compose down` stops the managed project but retains its named volume. `down -v` **deletes the
-memory volume**: use it only for explicitly disposable test installations or intentional erasure.
+Use the generated Compose file and project identity from the selected state directory, not an
+unrelated checkout's `docker-compose.yml`. `docker compose down` for that project stops it but retains
+its named volume. `down -v` **deletes the memory volume**: use it only for explicitly disposable test installations or intentional erasure.
 Keep the state directory and private key with the volume; deleting only the key can make retained data
 inaccessible to the registered client. Back up both before migration. Do not point two state directories
 at the same fixed volume or rename a state directory without a migration plan.
@@ -157,6 +172,7 @@ npm run test:package
 npm pack
 ```
 
-`npm pack` creates a local installable artifact. `npm publish` is a separate authorized release step,
-not part of setup or tests. The repository's old shell helper scripts remain legacy utilities; the
-V17 entry point is the npm CLI and `install.sh` forwards to it.
+These commands are for contributors preparing a release, not for installing the published package.
+`npm pack` creates a local installable artifact. Publishing a new version with `npm publish` remains
+a separate maintainer-authorized release step, not part of setup or tests. The repository's old shell
+helper scripts remain legacy utilities; the V17 entry point is the npm CLI and `install.sh` forwards to it.
