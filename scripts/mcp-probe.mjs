@@ -1,6 +1,8 @@
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import readline from 'node:readline';
+import { readFile } from 'node:fs/promises';
+const { version } = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
 
 // Real stdio MCP protocol probe. No model output or transport response is fabricated.
 export async function probeMcp(command, args, { timeoutMs = 240000 } = {}) {
@@ -37,7 +39,7 @@ export async function probeMcp(command, args, { timeoutMs = 240000 } = {}) {
     });
   }
   try {
-    const initialized = await request('initialize', { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'thinktank-integration', version: '17.0.1' } });
+    const initialized = await request('initialize', { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'thinktank-integration', version } });
     if (!initialized?.serverInfo) throw new Error('MCP initialize omitted serverInfo.');
     child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
     const listed = await request('tools/list', {});

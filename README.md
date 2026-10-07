@@ -1,6 +1,6 @@
 # ThinkTank V17
 
-**An engineering workflow for Hermes One and Claude Code that turns a task into scoped work, tested results and an independent review.**
+**An engineering workflow for Hermes One, Claude Code and Codex that turns a task into scoped work, tested results and an independent review.**
 Built by [Martin Tomczak](https://tomczak.dev).
 
 ## What is ThinkTank?
@@ -43,8 +43,8 @@ A simple lookup or tiny edit normally stays in one context. V17 does not start a
 
 ## Install
 
-**npm package: [@devgio81/thinktank 17.0.1](https://www.npmjs.com/package/@devgio81/thinktank).**
-For a version-pinned installation, use `@devgio81/thinktank@17.0.1` in the commands below.
+**npm package: [@devgio81/thinktank](https://www.npmjs.com/package/@devgio81/thinktank), release 17.1.0.**
+For a version-pinned installation, use `@devgio81/thinktank@17.1.0` in the commands below.
 One command. No clone, build, global install, manual configuration or npm account required.
 
 ### Hermes One
@@ -58,6 +58,17 @@ npx --yes @devgio81/thinktank --platform hermes --yes
 ```bash
 npx --yes @devgio81/thinktank --platform claude --yes
 ```
+
+### Codex
+
+The Codex adapter uses the same npx installer with `--platform codex`, available from 17.1.0:
+
+```bash
+npx --yes @devgio81/thinktank --platform codex --yes
+```
+
+Invoke the installed skill with `$thinktank-codex`. Codex uses existing host memory/settings;
+it installs no Docker/uv or foreign hooks. [Codex installation details](docs/install-codex.md).
 
 ### Prefer an interactive assistant?
 

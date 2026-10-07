@@ -1,0 +1,6 @@
+interface:
+  display_name: "ThinkTank V17"
+  short_description: "Grounded engineering with domain delegation"
+  default_prompt: "Use $thinktank-codex to implement and independently verify this engineering task."
+policy:
+  allow_implicit_invocation: true

@@ -68,7 +68,7 @@ function canonical(raw, base = '/') {
 }
 const folded = p => p.normalize('NFC').toLowerCase();
 const within = (p, root) => p === root || p.startsWith(root.endsWith('/') ? root : `${root}/`);
-const reserved = new Set(['.git', '.claude', '.hermes', '.thinktank', 'loop-grants', 'loop-checker']);
+const reserved = new Set(['.git', '.claude', '.hermes', '.codex', '.agents', '.thinktank', 'loop-grants', 'loop-checker']);
 const harnessFiles = new Set(['claude.md', 'agents.md', 'settings.json', 'settings.local.json', '.mcp.json', 'keybindings.json']);
 function scope(env, platform) {
   const raw = env[`${platform.toUpperCase()}_TT_REPO_PATH`];
@@ -77,7 +77,7 @@ function scope(env, platform) {
   if (root === '/' || !stat(root)?.isDirectory()) fail('TRUST_CONFIGURATION', 'Repo root must be an existing non-root directory.');
   const home = env.HOME;
   if (!home || !path.isAbsolute(home)) fail('TRUST_CONFIGURATION', 'HOME must be an absolute trusted path.');
-  const protectedPaths = [`${home}/.hermes`, `${home}/.claude`];
+  const protectedPaths = [`${home}/.hermes`, `${home}/.claude`, `${home}/.codex`, `${home}/.agents`];
   for (const key of ['HERMES_HOME', 'CLAUDE_HOME', 'CLAUDE_CONFIG_DIR',
     'HERMES_TT_GRANT_DIR', 'CLAUDE_TT_GRANT_DIR', 'HERMES_TT_CHECKER_DIR', 'CLAUDE_TT_CHECKER_DIR',
     'HERMES_TT_STATE_DIR', 'CLAUDE_TT_STATE_DIR']) {

@@ -158,7 +158,7 @@ cannot later be the independent checker of the same artifact; use `thinktank-che
 5. For each writer parent supplies a distinct isolated worktree and absolute path; no shared
    worktree writers, no overlapping ownership even across layers. Read-only workers may share source.
    Bind results to the assigned worktree/diff, not just worker-supplied touched-path claims.
-6. Use `dependencyLayers(plan,maxWorkers)` for stable capacity-bounded task-ID batches. With
+6. Use `dependencyLayers(plan,{maxWorkers,allowedWriteRoots})` for stable capacity-bounded task-ID batches. With
    `graph=off`, dispatch each task sequentially. Otherwise dispatch independent ready tasks together
    up to the **live configured host cap**. Reaching a cap means batching, never raising permissions.
    Wait for verified prerequisite completion before dispatching dependents; failed/blocked parents

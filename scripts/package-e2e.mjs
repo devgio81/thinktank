@@ -8,6 +8,7 @@ import { probeMcp } from './mcp-probe.mjs';
 import { composeCommand, dockerEnvironment } from '../src/qdrant/index.mjs';
 
 const repo = path.resolve(import.meta.dirname, '..');
+const { version } = JSON.parse(await fs.readFile(path.join(repo, 'package.json'), 'utf8'));
 const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'tt-package-e2e-')));
 const home = path.join(root, 'home');
 const stateDir = path.join(home, '.thinktank');
@@ -27,7 +28,7 @@ try {
   const archive = path.join(root, 'archives', archives[0]);
   const prefix = ['--yes', '--package', archive, 'thinktank'];
   assert.match(run('npx', [...prefix, '--help']), /ThinkTank V17/);
-  assert.equal(run('npx', [...prefix, '--version']).trim(), '17.0.1');
+  assert.equal(run('npx', [...prefix, '--version']).trim(), version);
   console.log('PASS packed npm bin via real npx: help and version');
   for (const platform of ['hermes', 'claude']) {
     const args = [...prefix, 'install', '--platform', platform, '--home', home, '--yes'];

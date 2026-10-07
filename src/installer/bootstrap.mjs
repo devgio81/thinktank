@@ -99,10 +99,10 @@ export async function ensureDocker(deps = {}) {
 export async function detectPlatforms(home, deps = {}) {
   const found = [];
   const find = deps.findExecutable ?? findExecutable;
-  for (const platform of ['hermes', 'claude']) {
+  for (const platform of ['hermes', 'claude', 'codex']) {
     let present = Boolean(await find(platform));
     if (!present) {
-      const config = path.join(home, platform === 'hermes' ? '.hermes/config.yaml' : '.claude/settings.json');
+      const config = path.join(home, platform === 'hermes' ? '.hermes/config.yaml' : platform === 'codex' ? '.codex/config.toml' : '.claude/settings.json');
       try { present = (await fs.stat(config)).isFile(); } catch {}
     }
     if (present) found.push(platform);

@@ -5,10 +5,12 @@ import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { exists, readOptional, treeFiles, assertSafePath, atomicWrite, applyOperations } from './files.mjs';
 import { configurationOperations, profilePaths } from './platforms.mjs';
+import { planCodexInstall, installCodex, doctorCodex } from './codex.mjs';
 
 export const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 export async function planInstall(options) {
+  if (options.platform === 'codex') return planCodexInstall(options);
   const { platform, home, stateDir, replace = false } = options;
   if (!['claude', 'hermes'].includes(platform)) throw new Error('Choose --platform claude or hermes.');
   await assertSafePath(home);
@@ -26,7 +28,7 @@ export async function planInstall(options) {
     }
     operations.push({ path: target, before, content, mode });
   };
-  for (const root of ['src', 'skills', 'agents', 'hooks']) {
+  for (const root of ['src', 'skills', 'agents', 'hooks', 'codex']) {
     if (!await exists(path.join(packageRoot, root))) continue;
     for (const name of await treeFiles(path.join(packageRoot, root))) {
       const content = await fs.readFile(path.join(packageRoot, root, name), 'utf8');
@@ -63,6 +65,7 @@ export async function planInstall(options) {
 }
 
 export async function install(options) {
+  if (options.platform === 'codex') return installCodex(options);
   // Validate every profile file and configuration before Docker/network side effects.
   const plan = await planInstall(options);
   if (options.dryRun) return { ...plan, operations: undefined, dryRun: true };
@@ -93,6 +96,7 @@ export async function install(options) {
 }
 
 export async function doctor(options) {
+  if (options.platform === 'codex') return doctorCodex(options);
   const report = { platform: options.platform, installed: false, configuration: false, qdrant: false, errors: [] };
   try {
     const manifest = JSON.parse(await fs.readFile(path.join(options.stateDir, `installed-${options.platform}.json`), 'utf8'));

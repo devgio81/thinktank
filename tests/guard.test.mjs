@@ -71,6 +71,12 @@ for (const platform of ['claude', 'hermes']) {
   const shell = platform === 'claude' ? 'Bash' : 'terminal';
   const target = (p, extra = {}) => ({ [platform === 'claude' ? 'file_path' : 'path']: p,
     content: 'after\n', ...extra });
+  test(`${platform}: Codex authority paths are protected across hosts`, t => {
+    const f = fixture(t);
+    for (const p of ['.codex/config.toml', '.agents/skills/custom/SKILL.md']) {
+      denied(invoke(f, platform, write, target(`${f.repo}/${p}`)), platform, 'PROTECTED_PATH');
+    }
+  });
   test(`${platform}: inactive is a side-effect-free no-op, only exact selected flag arms`, t => {
     const f = fixture(t);
     for (const mode of ['', '0', 'true', '01']) allowed(invoke(f, platform, write, {}, {
