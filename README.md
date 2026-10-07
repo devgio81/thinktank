@@ -83,24 +83,33 @@ Neither option overrides local-edit conflicts or operating-system permission pro
 
 ### Requirements
 
-- **Node.js 20.19+** with npm/npx, and an installed **Hermes One or Claude Code**.
-- **macOS:** Docker Desktop; if missing, the installer can install it through existing Homebrew.
+- **Node.js 20.19+** with npm/npx, and an installed **Hermes One, Claude Code or Codex**.
+- **Hermes/Claude on macOS:** Docker Desktop; if missing, the installer can install it through existing Homebrew.
   Existing Docker Desktop is started automatically. Complete any OS/admin/first-run prompts yourself.
-- **Linux (glibc, x64/arm64):** a running Docker Engine with Compose v2, accessible to your user.
-- Network access for the npm package, Docker image and initial local embedding-model downloads.
+- **Hermes/Claude on Linux (glibc, x64/arm64):** a running Docker Engine with Compose v2, accessible to your user.
+- Network access for the npm package; Hermes/Claude also fetch the Docker image and initial embedding model.
 
-Missing **uv is downloaded, checksum-verified and installed privately** on supported macOS/Linux
+For Hermes/Claude, missing **uv is downloaded, checksum-verified and installed privately** on supported macOS/Linux
 x64/arm64 systems. No separate uv command or shell-profile edit is needed. The installer does not
 install Node.js, Homebrew or the host application, configure model credentials or bypass system permissions.
 
 ### What gets installed
 
-Skills and domain prompts, the host-specific hook and MCP registration, a persistent runtime,
+Codex receives the self-contained `$thinktank-codex` skill, domain prompts and deterministic
+validation helpers. It uses existing host settings and memory; install requires no Docker or uv.
+
+Hermes/Claude receive skills and domain prompts, the host-specific hook and MCP registration, a persistent runtime,
 and a private authenticated **Qdrant** instance managed through **Docker Compose**. The installer
 initializes its vector collection and runs a write/read/query/delete smoke test. Existing Qdrant
 instances and unrelated application settings are preserved.
 
-After installation, **restart the target application**, then use:
+After installation, **restart the target application**. For Codex, use:
+
+```text
+$thinktank-codex review this project for correctness and security
+```
+
+For Hermes/Claude, use:
 
 ```text
 /thinktank review this project for correctness and security subagents=auto
