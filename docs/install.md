@@ -2,8 +2,8 @@
 
 ## Before starting
 
-Node.js **20.19+** and an installed **Hermes One** or **Claude Code** are required.
-ThinkTank auto-detects a single installed target, installs missing uv privately from a pinned,
+Node.js **20.19+** and an installed **Hermes One**, **Claude Code** or **Codex** are required.
+For Hermes/Claude, ThinkTank auto-detects a single installed target, installs missing uv privately from a pinned,
 SHA-256-verified official release, starts existing Docker Desktop on macOS, and installs missing
 Docker Desktop through an existing Homebrew installation. It then provisions Qdrant and the host
 integration without additional commands or manual config edits.
@@ -12,7 +12,7 @@ OS/admin and Docker first-run prompts remain human-controlled. On Linux, Docker 
 must be installed and running with access for the current user. Node, Homebrew and host-app login are
 not installed or modified silently.
 
-**npm package:** [@devgio81/thinktank 17.0.1](https://www.npmjs.com/package/@devgio81/thinktank).
+**npm package:** [@devgio81/thinktank](https://www.npmjs.com/package/@devgio81/thinktank), release 17.1.0.
 No repository clone, local build, global CLI installation or npm account is needed.
 All end-user CLI examples below run the public package directly through `npx`.
 
@@ -30,9 +30,20 @@ npx --yes @devgio81/thinktank --platform hermes --yes
 npx --yes @devgio81/thinktank --platform claude --yes
 ```
 
+**Codex:**
+
+```bash
+npx --yes @devgio81/thinktank --platform codex --yes
+```
+
+Codex installs the self-contained `$thinktank-codex` skill and uses existing host
+settings and MCP/memory. It does not provision Docker/uv or install foreign hooks.
+See [Codex installation](install-codex.md).
+
 The first `--yes` approves downloading the package through **npx**. The final `--yes`
 approves **ThinkTank's installation plan**, without overriding conflicts or OS permissions.
-After installation, restart the target application and invoke `/thinktank`.
+After installation, restart the target application and invoke `/thinktank` for
+Hermes/Claude or `$thinktank-codex` for Codex.
 
 **Interactive assistant:**
 
@@ -42,8 +53,8 @@ npx --yes @devgio81/thinktank
 
 A single installed application is detected automatically. If the target is ambiguous, the assistant
 asks you to choose; it then shows the plan for confirmation. In a non-interactive terminal, supply
-`--platform hermes` or `--platform claude` if detection is ambiguous and `--yes` to approve installation.
-For a version-pinned setup, replace `@devgio81/thinktank` with `@devgio81/thinktank@17.0.1` in any command.
+`--platform hermes`, `--platform claude` or `--platform codex` if detection is ambiguous and `--yes` to approve installation.
+For a version-pinned setup, replace `@devgio81/thinktank` with `@devgio81/thinktank@17.1.0` in any command.
 Reinstallation uses the same one-command entry point.
 
 Both platforms can share the default `~/.thinktank` memory instance. Each receives its own skill and hook registration.
@@ -176,3 +187,9 @@ These commands are for contributors preparing a release, not for installing the 
 `npm pack` creates a local installable artifact. Publishing a new version with `npm publish` remains
 a separate maintainer-authorized release step, not part of setup or tests. The repository's old shell
 helper scripts remain legacy utilities; the V17 entry point is the npm CLI and `install.sh` forwards to it.
+
+## Codex
+
+The same npm/npx executable supports `--platform codex` from release 17.1.0. See
+[Codex installation](install-codex.md) for the local tarball command, discovery roots,
+existing memory behavior and independent validation. Earlier releases predate this change.

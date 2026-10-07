@@ -20,6 +20,8 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm test
+      - run: npm run test:codex-package
+        timeout-minutes: 5
       - run: npm pack
   integration:
     runs-on: ubuntu-latest

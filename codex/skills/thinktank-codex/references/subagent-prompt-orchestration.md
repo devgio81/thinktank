@@ -2,10 +2,10 @@
 
 ## Responsibility boundary
 
-Source: `src/orchestration/index.mjs` (Node ESM, standard library only).
+Source: `scripts/orchestration/index.mjs` (Node ESM, standard library only).
 Exports `validatePlan`, `dependencyLayers`, `joinResults`, `WORKER_OUTPUT_SCHEMA`.
 These functions inspect data, not agents: **no LLM runtime, no dispatch, no shell execution**.
-CLI integration: `thinktank validate-plan --plan FILE`; host parent still owns real delegation,
+CLI integration: `node <skill-dir>/scripts/validate-plan.mjs FILE --max-workers N [--allowed-write-root scope ...]`; host parent still owns real delegation,
 semantic review, safe verifier execution, worktree isolation and independent checker acceptance.
 No validation result authorizes a tool call or proves a stated source pointer is true.
 
@@ -43,7 +43,7 @@ Acceptance criteria are **one of**:
 {"id":"device","criterion":"Keyboard works on target device","type":"handoff","recipient":"project owner","action":"Run the specified keyboard walkthrough on the physical target"}
 ```
 
-`argv` is a non-empty non-blank string array; `cwd` is `.` or canonical repository-relative
+`argv` is a non-empty non-blank string array; `cwd` is `.` or an existing canonical repository-relative
 directory (no globs/escape/alias); expected exit is integer 0..255. A command criterion is an
 executable **shape**, not proof the executable exists or that the command is safe. Parent must
 inspect/run safe commands and verify they actually discriminate acceptance. Handoff is not a pass.
@@ -53,7 +53,10 @@ review, not a pretend NLP check in this module.
 Prompt ordered headings, each on its own line with body:
 `ROLE`, `OBJECTIVE`, `REPOSITORY AND EVIDENCE`, `OWNERSHIP`, `CONSTRAINTS`, `WORK`, `ACCEPTANCE`,
 `RETURN CONTRACT`. Generated prompt reaches child verbatim. A separate parent envelope binds
-language, actual worktree, task object and output schema; child inherits no conversation implicitly.
+language, actual worktree, task object and output schema. Codex parent explicitly uses
+`fork_turns: "none"`; default spawning would inherit the conversation. Current Codex spawning has
+no enforced output_schema parameter; parent parses and validates actual returns. A non-JSON or
+invalid return receives at most the remaining bounded correction budget.
 
 ## Scope grammar and filesystem limits
 
@@ -62,12 +65,13 @@ language, actual worktree, task object and output schema; child inherits no conv
   slash, absolute path, backslash, wildcard elsewhere, bracket/brace/question glob or encoding.
 - An existing directory requires `/**`; an existing file cannot use `/**`.
 - Containment uses full segment boundaries: `src/api/**` never grants `src/api-other/**`.
-  Conservative case-folded comparisons reject potential case-insensitive collisions.
+  Capability containment requires exact spelling, including absent paths: `src/api/**` never
+  grants `src/API/new.mjs`. Conservative case-folding applies only to overlap/collision rejection.
 - Every writer must be covered by `allowedWriteRoots`; omitted roots default to **no writes**.
   Roots are explicit capabilities supplied by the parent, not inferred by `validatePlan`.
 - Every pair of write scopes, including a task's redundant overlaps and dependencies in later
   layers, must be disjoint. Serialize by a new parent-approved contract if ownership must move.
-- `.git`, `.claude`, `.hermes`, loop-grants/checker segments, and CLAUDE.md/AGENTS.md/.mcp.json
+- `.git`, `.claude`, `.hermes`, `.codex`, `.agents`, loop-grants/checker segments, and CLAUDE.md/AGENTS.md/.mcp.json/settings.json
   are denied write targets. Parent must additionally exclude frozen plan/criteria and any custom
   active harness location; arbitrary installed paths cannot be inferred from names alone.
 - Repository and scope ancestors must be canonical. Symlinks, hardlink files and special files
@@ -91,16 +95,20 @@ for CLI compatibility. Error codes: OPTIONS, SCHEMA, REPOSITORY, MODE, ID, DUPLI
 DEPENDENCY, CYCLE, PROMPT, OUTPUT_SCHEMA, ACCEPTANCE, SCOPE, PROTECTED, WRITE_ROOT, OVERLAP.
 `path` is an input location; `message` is diagnostic, not a stable protocol string.
 Use normal JSON input (no cyclic JS objects/getters); function does not mutate the input.
-`maxWorkers` must be a positive safe integer. It caps simultaneous work, **not total plan size**.
+`maxWorkers` must be a positive safe integer. CLI requires it explicitly; API default is 3.
+Supply live available child capacity including the parent and other active agents. It caps
+simultaneous work, **not total plan size**. Validator does not inspect live host capacity.
 
 `dependencyLayers(plan,{maxWorkers=3,allowedWriteRoots=[]}={})` returns arrays of task IDs, lexical ASCII order within each
 logical topological layer, split into batches at most maxWorkers wide. Whole logical layer freezes
-before capacity splitting, so no dependent jumps ahead of remaining peers. It revalidates using the same explicit parent authorization envelope as validatePlan.
-Omitted allowedWriteRoots means no writes; worker claims cannot grant scheduler capabilities. Invalid input
+before capacity splitting, so no dependent jumps ahead of remaining peers. It revalidates the same explicit parent envelope as validatePlan. It never infers a write grant
+from task claims. Omitted allowedWriteRoots means no writes. A syntactically allowed root still
+needs actual user authorization; data is not permission. Invalid input
 throws `Error` with `code='INVALID_PLAN'`, `errors=[{code,path,message},...]`.
 
 Parent executes returned batches, awaits real verified results and withholds descendants after any
-failed/blocked prerequisite. For graph=off parent serializes each task. Scheduler does not wait,
+failed/blocked prerequisite. For graph=off there is no explicit graph topology; ordinary independent workers may still run
+in parallel. Dependencies and live capacity always apply. Scheduler does not wait,
 retry, unlock on success, enforce concurrency against other runs or start a host agent.
 
 `joinResults(results)` requires a non-empty array of worker results. Each result has:
@@ -131,19 +139,21 @@ than choosing a latest writer. Findings with same ID+claim union provenance/evid
 different claims retains **all variants** and sets needs_handoff. Different IDs are not semantically
 reconciled; parent/checker notices semantic contradictions. Any non-completed result also sets
 needs_handoff, preserving original statuses. Completed is aggregate reporting, not checker ACCEPT.
-Arrays and keys are deterministically sorted; input/result ordering cannot pick a winning claim.
+Value arrays and task/finding lists are deterministically sorted; object property insertion order
+is not a canonical serialization contract. Use canonical serialization separately if a stable
+byte digest is needed. Input/result ordering cannot pick a winning claim.
 Malformed input throws `Error` with `code='INVALID_RESULTS'`, `errors=[{code,path,message},...]`.
 Result codes include RESULT and DUPLICATE_RESULT. No partial join on malformed data.
 
-## Runnable smoke example (repository root)
+## Runnable checks (skill directory)
 
 ```sh
-node --input-type=module -e "import {validatePlan,dependencyLayers,joinResults} from './src/orchestration/index.mjs'; for (const f of [validatePlan,dependencyLayers,joinResults]) if(typeof f!=='function') process.exit(1)"
-node --test tests/orchestration*.test.mjs
+node scripts/verify.mjs
+node scripts/validate-plan.mjs /absolute/plan.json --max-workers 2 --allowed-write-root 'src/**'
 ```
 
-The regression file constructs full schema-valid example plans and results. The library never
-claims those fixtures were actual model outputs. Host-native mapping is in
-[hermes-adapter.md](hermes-adapter.md); domain prompt definitions are product `agents/` files,
-copied by the Hermes installer into `references/domains/`. Workers never delegate; Prompter never
-writes; checker never authors; parent alone validates, dispatches, verifies and owns human gates.
+The bundled tests construct schema-valid plans and results and exercise real negative controls;
+fixtures are not model outputs. Functions do not execute acceptance argv, dispatch agents or
+start models. The parent's candidate verification and fresh independent checker remain necessary.
+See [the Codex adapter](codex-adapter.md) and [role prompts](domains/thinktank-prompter.md).
+No helper proves facts, shell safety, OS isolation, legal compliance or delivery authorization.

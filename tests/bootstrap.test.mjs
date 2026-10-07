@@ -58,5 +58,5 @@ test('platform discovery uses actual commands, not a fixed preferred application
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   assert.deepEqual(await detectPlatforms(root, { findExecutable: async name => name === 'claude' ? '/bin/claude' : null }), ['claude']);
   assert.deepEqual(await detectPlatforms(root, { findExecutable: async () => null }), []);
-  assert.deepEqual(await detectPlatforms(root, { findExecutable: async name => '/bin/' + name }), ['hermes', 'claude']);
+  assert.deepEqual(await detectPlatforms(root, { findExecutable: async name => '/bin/' + name }), ['hermes', 'claude', 'codex']);
 });

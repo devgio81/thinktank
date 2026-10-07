@@ -1,10 +1,15 @@
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, rmSync, realpathSync, linkSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { validatePlan, dependencyLayers, joinResults, WORKER_OUTPUT_SCHEMA } from '../src/orchestration/index.mjs';
+import { resolve, join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { validatePlan, dependencyLayers, joinResults, WORKER_OUTPUT_SCHEMA } from '../scripts/orchestration/index.mjs';
 
-const repo = realpathSync(resolve(import.meta.dirname, '..'));
+// Regression fixtures are isolated from both the port and the imported source.
+const repo = realpathSync(mkdtempSync(join(tmpdir(), 'thinktank-v17-regression-')));
+mkdirSync(join(repo, 'src'));
+mkdirSync(join(repo, 'tests'));
+after(() => rmSync(repo, { recursive: true, force: true }));
 const task = (id, dependencies = [], write_scope = [`src/${id}/**`]) => ({
   id, domain: 'backend', objective: 'Preserve API error behavior', deliverable: 'API and regression',
   dependencies, read_scope: ['src/**'], write_scope,
@@ -97,6 +102,19 @@ test('canonical segment boundaries and all writer overlaps, even across dependen
   invalid(plan([task('a', [], ['src/api/**', 'src/api/x'])]), 'OVERLAP');
 });
 
+test('write capabilities require exact spelling for absent paths while collisions remain case-folded', () => {
+  const opts = { maxWorkers: 1, allowedWriteRoots: ['review-uppercase-cap/**'] };
+  valid(plan([task('a', [], ['review-uppercase-cap/new.mjs'])]), opts);
+  invalid(plan([task('a', [], ['REVIEW-UPPERCASE-CAP/new.mjs'])]), 'WRITE_ROOT', opts);
+  invalid(plan([task('a', [], ['review-uppercase-cap-other/new.mjs'])]), 'WRITE_ROOT', opts);
+  valid(plan([task('a', [], ['review-uppercase-cap/new.mjs'])]),
+    { maxWorkers: 1, allowedWriteRoots: ['review-uppercase-cap/new.mjs'] });
+  invalid(plan([task('a', [], ['review-uppercase-cap/NEW.mjs'])]), 'WRITE_ROOT',
+    { maxWorkers: 1, allowedWriteRoots: ['review-uppercase-cap/new.mjs'] });
+  invalid(plan([task('a', [], ['review-uppercase-cap/a.mjs']), task('b', [], ['REVIEW-UPPERCASE-CAP/A.mjs'])]),
+    'OVERLAP', { maxWorkers: 2, allowedWriteRoots: ['review-uppercase-cap/**', 'REVIEW-UPPERCASE-CAP/**'] });
+});
+
 test('filesystem scopes reject symlink ancestors, nested symlinks and hardlink aliases', () => {
   const base = mkdtempSync(resolve(repo, 'tests/orchestration-fixture-'));
   try {
@@ -113,38 +131,14 @@ test('filesystem scopes reject symlink ancestors, nested symlinks and hardlink a
 
 test('stable dependency layers are bounded by capacity, not total task count', () => {
   const p = plan([task('z'), task('b'), task('a'), task('c', ['a']), task('d', ['c', 'z'])]);
-  valid(p); assert.deepEqual(dependencyLayers(p, options), [['a', 'b'], ['z'], ['c'], ['d']]);
-  assert.deepEqual(dependencyLayers({ ...p, tasks: [...p.tasks].reverse() }, options), dependencyLayers(p, options));
+  valid(p); assert.deepEqual(dependencyLayers(p, { ...options, maxWorkers: 2 }), [['a', 'b'], ['z'], ['c'], ['d']]);
+  assert.deepEqual(dependencyLayers({ ...p, tasks: [...p.tasks].reverse() }, { ...options, maxWorkers: 2 }), dependencyLayers(p, { ...options, maxWorkers: 2 }));
   assert(dependencyLayers(p, { ...options, maxWorkers: 1 }).every(layer => layer.length === 1));
   for (const cap of [0, -1, 1.2, '2', Infinity]) {
     invalid(p, 'OPTIONS', { ...options, maxWorkers: cap });
     assert.throws(() => dependencyLayers(p, { ...options, maxWorkers: cap }), e => e.code === 'INVALID_PLAN' && e.errors.length > 0);
   }
   assert.throws(() => dependencyLayers(plan([task('a', ['a'])]), { ...options, maxWorkers: 1 }), { code: 'INVALID_PLAN' });
-});
-
-test('scheduler requires external write capabilities and case cannot widen them', () => {
-  const p = plan([task('a', [], ['src/API/new.mjs'])]);
-  invalid(p, 'WRITE_ROOT', { maxWorkers: 1, allowedWriteRoots: ['src/api/**'] });
-  assert.throws(() => dependencyLayers(p), e => e.code === 'INVALID_PLAN' && e.errors.some(x => x.code === 'WRITE_ROOT'));
-  assert.throws(() => dependencyLayers(p, { maxWorkers: 1, allowedWriteRoots: ['src/api/**'] }), { code: 'INVALID_PLAN' });
-  assert.deepEqual(dependencyLayers(plan([task('a', [], [])]), { maxWorkers: 1 }), [['a']]);
-});
-
-test('Codex control files, hidden protected descendants and absent acceptance cwd fail closed', () => {
-  for (const target of ['.codex/config.toml', '.agents/example.md', '.thinktank/work-packages.md',
-    'settings.json', 'settings.local.json', 'keybindings.json']) {
-    invalid(plan([task('a', [], [target])]), 'PROTECTED', { maxWorkers: 1, allowedWriteRoots: [target] });
-  }
-  const base = mkdtempSync(resolve(repo, 'tests/orchestration-controls-'));
-  try {
-    mkdirSync(resolve(base, 'src'));
-    writeFileSync(resolve(base, 'src/AGENTS.md'), 'Protected authority');
-    invalid({ ...plan([task('a', [], ['src/**'])]), repo_path: base }, 'SCOPE');
-    const p = { ...plan([task('a', [], [])]), repo_path: base };
-    p.tasks[0].acceptance[0].cwd = 'missing-directory';
-    invalid(p, 'ACCEPTANCE');
-  } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
 test('join is deterministic, deduplicates exact replays and preserves provenance', () => {

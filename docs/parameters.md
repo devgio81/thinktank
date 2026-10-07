@@ -300,7 +300,7 @@ npx --yes @devgio81/thinktank --help
 | Command | Purpose |
 |---|---|
 | `install` | Plan and install ThinkTank; the default when no subcommand is supplied |
-| `doctor` | Inspect installed files/configuration and Qdrant availability/schema |
+| `doctor` | Inspect managed files; Hermes/Claude additionally inspect configuration and Qdrant availability/schema |
 | `mcp` | Start the stdio MCP transport using the saved Qdrant configuration; normally started by the host |
 | `validate-plan` | Validate a supplied JSON task plan and print dependency batches; does not run workers/tests |
 
@@ -313,11 +313,12 @@ and invalid values fail. Duplicate flags fail except for repeatable `--write-roo
 
 | Flag | Default / accepted values | Meaning and boundary | Example argument |
 |---|---|---|---|
-| `--platform` | Auto-detect one installed target; `hermes` or `claude` | Select the application to configure or inspect. Ambiguity prompts interactively or requires an explicit flag | `--platform hermes` |
+| `--platform` | Auto-detect one installed target; `hermes`, `claude` or `codex` | Select the application to configure or inspect. Ambiguity prompts interactively or requires an explicit flag | `--platform codex` |
 | `--home` | Current OS user's home; path | Select all managed host profile locations, including Claude's `.claude.json`. This is not a named Hermes profile switch | `--home /absolute/path/to/test-home` |
 | `--state-dir` | `<home>/.thinktank`; path | Select persistent runtime, backups and Qdrant configuration identity. Keep the same location for later doctor/MCP calls; this does not migrate old state | `--state-dir /absolute/path/to/thinktank-state` |
-| `--port` | Automatically choose an available port; `1024`–`65535` | Set the local Qdrant REST port during installation. An occupied explicit port is refused, not taken over | `--port 7333` |
-| `--collection` | `thinktank-memory` | Name the Qdrant collection. 1–128 letters/digits/underscores/hyphens; first character must be a letter or digit | `--collection engineering-memory` |
+| `--skills-dir` | `<home>/.agents/skills`; path, Codex only | Select the Codex skill discovery root. Install and doctor must use the same root; a different root needs separate state | `--skills-dir /absolute/path/to/test-home/.codex/skills` |
+| `--port` | Automatically choose an available port; `1024`–`65535`, Hermes/Claude only | Set the local Qdrant REST port during installation. An occupied explicit port is refused, not taken over; Codex uses existing host memory | `--port 7333` |
+| `--collection` | `thinktank-memory`, Hermes/Claude only | Name the Qdrant collection. 1–128 letters/digits/underscores/hyphens; first character must be a letter or digit | `--collection engineering-memory` |
 | `--timeout` | `120` seconds; `10`–`600` | Set the installer startup deadline. Not an agent task or token budget | `--timeout 240` |
 | `--yes` | Off | Confirm the installation plan without an interactive prompt. Does not bypass local-edit conflicts or OS permissions | `--yes` |
 | `--replace` | Off | Explicitly permit replacing conflicting managed files with backups. Preview and inspect before using it | `--replace` |
@@ -335,6 +336,8 @@ Normal installation and inspection:
 npx --yes @devgio81/thinktank install --platform hermes --yes
 npx --yes @devgio81/thinktank doctor --platform hermes
 npx --yes @devgio81/thinktank doctor --platform claude --home /absolute/path/to/test-home --state-dir /absolute/path/to/thinktank-state
+npx --yes @devgio81/thinktank install --platform codex --yes
+npx --yes @devgio81/thinktank doctor --platform codex
 ```
 
 The first `--yes`, before the package name, belongs to **npx** and approves package acquisition.

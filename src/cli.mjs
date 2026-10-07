@@ -5,13 +5,14 @@ import * as fs from 'node:fs/promises';
 import readline from 'node:readline/promises';
 import { pathToFileURL } from 'node:url';
 
-export const help = `ThinkTank V17 — Hermes One / Claude Code
+export const help = `ThinkTank V17 — Hermes One / Claude Code / Codex
 
 Usage: thinktank [install|doctor|mcp|validate-plan] [options]
 
-  --platform hermes|claude   Target app (auto-detected when only one is installed)
+  --platform hermes|claude|codex   Target app (auto-detected when only one is installed)
   --home PATH               User home; defaults to the current user's home
   --state-dir PATH          Persistent runtime/data; default HOME/.thinktank
+  --skills-dir PATH         Codex skill discovery root; default HOME/.agents/skills
   --port PORT               Local Qdrant REST port (automatic if omitted)
   --collection NAME         Default: thinktank-memory
   --timeout SECONDS         Startup deadline, 10–600 (default 120)
@@ -24,7 +25,9 @@ Usage: thinktank [install|doctor|mcp|validate-plan] [options]
   --help                    Show this help
   --version                 Show package version
 
-Requires Node.js >=20.19 and Hermes One or Claude Code.
+Requires Node.js >=20.19 and Hermes One, Claude Code or Codex.
+Codex installs a self-contained skill through this same CLI, using existing host
+memory/settings. It needs no Docker or uv and installs no foreign lifecycle hooks.
 Missing uv is installed privately; macOS Docker Desktop is installed via existing
 Homebrew if missing and started automatically. Linux requires a running Docker service.
 Docker/OS first-run permissions remain with the user.
@@ -37,7 +40,7 @@ export function parseArgs(argv) {
   const commands = new Set(['install', 'doctor', 'mcp', 'validate-plan']);
   let commandSeen = false;
   const bools = new Map([['--yes','yes'], ['--replace','replace'], ['--dry-run','dryRun'], ['--help','help'], ['-h','help'], ['--version','version']]);
-  const strings = new Map([['--platform','platform'], ['--home','home'], ['--state-dir','stateDir'], ['--collection','collection'], ['--port','port'], ['--timeout','timeout'], ['--plan','plan'], ['--max-workers','maxWorkers']]);
+  const strings = new Map([['--platform','platform'], ['--home','home'], ['--state-dir','stateDir'], ['--skills-dir','skillsDir'], ['--collection','collection'], ['--port','port'], ['--timeout','timeout'], ['--plan','plan'], ['--max-workers','maxWorkers']]);
   const seen = new Set();
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i];
@@ -56,7 +59,9 @@ export function parseArgs(argv) {
     if (!value || value.startsWith('--')) throw new Error(`Missing value for ${token}`);
     options[strings.get(token)] = value;
   }
-  if (options.platform && !['hermes','claude'].includes(options.platform)) throw new Error('--platform must be hermes or claude.');
+  if (options.platform && !['hermes','claude','codex'].includes(options.platform)) throw new Error('--platform must be hermes, claude or codex.');
+  if (options.skillsDir && options.platform && options.platform !== 'codex') throw new Error('--skills-dir is only supported for Codex.');
+  if (options.platform === 'codex' && (seen.has('--port') || seen.has('--collection'))) throw new Error('Codex uses existing host memory; --port/--collection are not Codex install options.');
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(options.collection)) throw new Error('Invalid collection name. Use letters, digits, _ and -.');
   if (options.port !== undefined) {
     if (!/^\d+$/.test(options.port) || +options.port < 1024 || +options.port > 65535) throw new Error('--port must be 1024–65535.');
@@ -70,13 +75,18 @@ export function parseArgs(argv) {
   options.maxWorkers = Number(options.maxWorkers ?? 3);
   options.home = path.resolve(options.home);
   options.stateDir = path.resolve(options.stateDir ?? path.join(options.home, '.thinktank'));
+  if (options.skillsDir) options.skillsDir = path.resolve(options.skillsDir);
   return options;
 }
 
 export async function main(argv = process.argv.slice(2)) {
   const options = parseArgs(argv);
   if (options.help) { console.log(help); return; }
-  if (options.version) { console.log('17.0.1'); return; }
+  if (options.version) {
+    const { version } = JSON.parse(await fs.readFile(new URL('../package.json', import.meta.url), 'utf8'));
+    console.log(version);
+    return;
+  }
   if (options.command === 'mcp') {
     const { launchMcp, loadQdrantConfig } = await import('./qdrant/index.mjs');
     const config = await loadQdrantConfig(options.stateDir);
@@ -93,7 +103,7 @@ export async function main(argv = process.argv.slice(2)) {
       process.exitCode = 1;
       return;
     }
-    console.log(JSON.stringify({ valid: true, layers: dependencyLayers(plan, options.maxWorkers) }, null, 2));
+    console.log(JSON.stringify({ valid: true, layers: dependencyLayers(plan, { maxWorkers: options.maxWorkers, allowedWriteRoots: options.allowedWriteRoots ?? [] }) }, null, 2));
     return;
   }
   const interactive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
@@ -105,11 +115,13 @@ export async function main(argv = process.argv.slice(2)) {
       if (found.length === 1) options.platform = found[0];
     }
     if (!options.platform) {
-      if (!prompt) throw new Error('Target is ambiguous; include --platform hermes|claude in the same command.');
-      const answer = (await prompt.question('Install for [1] Hermes One or [2] Claude Code? [1] ')).trim().toLowerCase();
-      if (!['','1','2','hermes','claude'].includes(answer)) throw new Error('Choose 1 or 2; nothing installed.');
-      options.platform = ['2','claude'].includes(answer) ? 'claude' : 'hermes';
+      if (!prompt) throw new Error('Target is ambiguous; include --platform hermes|claude|codex in the same command.');
+      const answer = (await prompt.question('Install for [1] Hermes One, [2] Claude Code or [3] Codex? [1] ')).trim().toLowerCase();
+      if (!['','1','2','3','hermes','claude','codex'].includes(answer)) throw new Error('Choose 1, 2 or 3; nothing installed.');
+      options.platform = ['3','codex'].includes(answer) ? 'codex' : ['2','claude'].includes(answer) ? 'claude' : 'hermes';
     }
+    if (options.skillsDir && options.platform !== 'codex') throw new Error('--skills-dir is only supported for Codex.');
+    if (options.platform === 'codex' && (argv.includes('--port') || argv.includes('--collection'))) throw new Error('Codex uses existing host memory; --port/--collection are not Codex install options.');
     const { planInstall, install, doctor } = await import('./installer/index.mjs');
     if (options.command === 'doctor') {
       const result = await doctor(options);
@@ -118,19 +130,25 @@ export async function main(argv = process.argv.slice(2)) {
       return;
     }
     const plan = await planInstall(options);
-    console.log(`ThinkTank V17 → ${options.platform === 'hermes' ? 'Hermes One' : 'Claude Code'}`);
-    console.log(`Home: ${options.home}\nState: ${options.stateDir}\nQdrant: loopback:${options.port ?? 'automatic'}, collection ${options.collection}`);
+    console.log(`ThinkTank V17 → ${options.platform === 'hermes' ? 'Hermes One' : options.platform === 'codex' ? 'Codex' : 'Claude Code'}`);
+    console.log(`Home: ${options.home}\nState: ${options.stateDir}`);
+    console.log(options.platform === 'codex' ? `Skill: ${plan.skillDir}\nMemory: existing host configuration` : `Qdrant: loopback:${options.port ?? 'automatic'}, collection ${options.collection}`);
     console.log(`${plan.changes.length} file changes. Existing edits require --replace; replacements are backed up.`);
     if (options.dryRun) { console.log(JSON.stringify({ dryRun: true, changes: plan.changes }, null, 2)); return; }
     if (!options.yes) {
       if (!prompt) throw new Error('Use --yes to confirm or --dry-run to preview. Nothing installed.');
-      const yes = await prompt.question('Install ThinkTank and missing uv, start Docker/Qdrant, configure the selected app? [y/N] ');
+      const yes = await prompt.question(options.platform === 'codex' ? 'Install the Codex skill, preserving existing host settings and memory? [y/N] ' : 'Install ThinkTank and missing uv, start Docker/Qdrant, configure the selected app? [y/N] ');
       if (!/^y(es)?$/i.test(yes.trim())) { console.log('Cancelled. Nothing installed.'); return; }
     }
     const result = await install(options);
     console.log(JSON.stringify(result, null, 2));
-    console.log('Installation verified. Restart the target application, then use /thinktank.');
-    console.log('Hooks are inert in interactive sessions. Unattended delivery remains human-gated.');
+    if (options.platform === 'codex') {
+      console.log('Installation verified. Use $thinktank-codex; restart Codex if it does not appear.');
+      console.log('Existing memory/settings preserved. Enforced unattended Codex delivery is unavailable.');
+    } else {
+      console.log('Installation verified. Restart the target application, then use /thinktank.');
+      console.log('Hooks are inert in interactive sessions. Unattended delivery remains human-gated.');
+    }
   } finally { prompt?.close(); }
 }
 
